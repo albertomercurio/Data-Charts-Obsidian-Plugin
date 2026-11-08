@@ -1,0 +1,172 @@
+/* Data Charts: one block, its range buttons, facets, table and messages. Colors from the theme. */
+
+.data-chart {
+  margin: 0.5em 0 1em;
+  font-family: var(--font-interface);
+}
+
+.data-chart-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  margin-bottom: 0.25em;
+}
+
+.data-chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.data-chart-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.data-chart-chip,
+.data-chart .data-chart-chip {
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  padding: 5px 9px;
+  min-height: 24px;
+  border-radius: var(--radius-s);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.data-chart-chip:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.data-chart-chip.is-active {
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+  border-color: var(--background-modifier-border-hover);
+  background: var(--background-secondary);
+}
+
+.data-chart-chip:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.data-chart-table-toggle {
+  margin-left: auto;
+}
+
+.data-chart-table-toggle[aria-pressed="true"] {
+  color: var(--text-normal);
+  border-color: var(--background-modifier-border-hover);
+}
+
+.data-chart-grid.is-faceted {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px 20px;
+}
+
+.data-chart-facet-title {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.data-chart-canvas {
+  width: 100%;
+  min-width: 0;
+}
+
+.data-chart-table {
+  max-height: 320px;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+.data-chart-table.is-hidden {
+  display: none;
+}
+
+.data-chart-table table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--font-ui-small);
+}
+
+.data-chart-table th,
+.data-chart-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  text-align: left;
+}
+
+.data-chart-table th {
+  position: sticky;
+  top: 0;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-weight: var(--font-semibold);
+}
+
+.data-chart-number {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-chart-error,
+.data-chart-empty {
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  font-size: var(--font-ui-small);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.data-chart-error {
+  border-left: 3px solid var(--text-error);
+}
+
+.data-chart-tooltip {
+  min-width: 120px;
+}
+
+.data-chart-tooltip-x {
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.data-chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.data-chart-key {
+  display: inline-block;
+  width: 10px;
+  height: 2px;
+  border-radius: 1px;
+  flex: none;
+}
+
+.data-chart-tooltip-name {
+  color: var(--text-muted);
+}
+
+.data-chart-tooltip-band {
+  color: var(--text-muted);
+  padding-left: 16px;
+  font-size: 0.92em;
+}
+
+.data-chart-flag {
+  color: var(--text-error);
+  font-weight: var(--font-semibold);
+}
