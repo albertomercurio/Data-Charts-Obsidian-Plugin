@@ -5,7 +5,9 @@ Interactive, responsive charts of the data files in your vault — CSV, JSON and
 - **Any x axis**: dates (a time axis), numbers or names, detected from the data.
 - **Range buttons**: `1W`, `1M`, `3M`, `6M`, `1Y`, `3Y`, `YTD`, `All` on a time axis; the last N units or categories, or named windows, on any axis. Buttons that would show everything are left out. Charts of a `group` in a note share their range.
 - **Zoom and pan**: ⌘/Ctrl + wheel, trackpad or touch pinch, drag, and a slider.
-- **Series**: lines, areas, bars, points; moving averages by points or by time (`7d`); aggregation by day, week, month or year; expressions (`distance_km * 1000 / (hr_avg * duration_min)`).
+- **Series**: lines, areas, bars, points, stacked bars with their total; moving averages by points or by time (`7d`); aggregation by day, week, month or year; expressions (`distance_km * 1000 / (hr_avg * duration_min)`).
+- **A readable time axis**: days, weeks, months or years as the window and the width allow; the first label of each month names it, hairlines mark where months begin, and weekly or monthly totals are labelled under their bar.
+- **Descriptions**: a few lines of Markdown under the title, to say what the chart shows and how to read it.
 - **Reference bands**: a shaded range from two fields of each row (lab reference intervals, targets); points outside it are marked and the tooltip says so.
 - **Small multiples**: `facet` draws one chart per value of a field (one per lab test, per sport…), zooming together.
 - **Tables**: a table view of every chart, and `type: table` for rows filtered by the note itself (`where: date == this.Date`).
@@ -46,6 +48,7 @@ date,steps
 | `series` | List of series, each with `y` and any series key below | |
 | `type` | `line` (default), `area`, `bar`, `scatter`, or `table` | `bar` |
 | `title` | Shown above the chart | |
+| `description` | Markdown under the title: what the chart shows, how to read it | `Minutes in each zone, per week.` |
 | `where` | Keeps the rows for which the expression holds | `sport == "running"` |
 | `range` | Range shown first | `3M` |
 | `ranges` | Range buttons, replacing the default ones | `[1W, 1M, 1Y, All]` |
@@ -53,7 +56,8 @@ date,steps
 | `facet` | One chart per value of this field | `analyte` |
 | `facets` | Which values, in which order | `[hemoglobin, ferritin]` |
 | `labels` | Names shown for facet values | `{ferritin: Ferritin (ng/mL)}` |
-| `yaxis` | `min`, `max`, `zero` (include zero), `log`, `unit` | `{zero: true}` |
+| `yaxis` | `min`, `max`, `zero` (include zero), `log`, `unit` (shown above the axis; by default the unit all series share), `inverse` (upside down: for a pace, lower is faster), `format: duration` (values in seconds, shown as `5:30`) | `{zero: true}` |
+| `colors` | `sequential`: one hue from light to dark, for ordered series (zones, levels); or a list of CSS colors | `sequential` |
 | `height` | Pixels, 120–2000 (default 300) | `240` |
 | `columns`, `sort`, `limit` | For `type: table`: fields shown, order (`-date` or `date desc`), number of rows | |
 
@@ -71,6 +75,7 @@ Series keys — also accepted at the top level, for every series:
 | `smooth` | Smooth the line | `true` |
 | `unit` | After values in the tooltip | `kg` |
 | `color` | A CSS color, instead of the palette's next one | `"#2a78d6"` |
+| `stack` | Bars (or areas) drawn on top of each other: `true`, or a name for each stack; the tooltip adds the total | `true` |
 
 There is never a second y axis: two measures of different scale go in two charts, which a `group` keeps on the same range.
 
@@ -141,9 +146,41 @@ unit: km
 range: 6M
 ```
 
+## Stacked totals
+
+```data-chart
+title: Minutes per heart-rate zone, per week
+description: Each column is one week of workouts; its height is the time above 50 % of heart-rate reserve.
+source: Data/workouts.jsonl
+x: date
+type: bar
+agg: week/sum
+stack: true
+colors: sequential
+unit: min
+series:
+  - {y: z1_min, name: Z1}
+  - {y: z2_min, name: Z2}
+  - {y: z3_min, name: Z3}
+```
+
+## A pace, in minutes and seconds
+
+```data-chart
+title: Pace
+source: Data/workouts.jsonl
+where: sport == "running"
+x: date
+y: pace_s_km
+name: Pace
+unit: /km
+yaxis: {inverse: true, format: duration}
+points: true
+```
+
 ## Design
 
-Marks are thin and quiet: 2px lines, 8px points with a ring in the background color, bars at most 24px wide with rounded ends, fills at 10 %, a hairline grid, a legend only for two or more series. Series take a fixed order of eight colors chosen to stay distinct for color-vision deficiencies, with their own steps for dark themes; text uses the theme's text colors, never a series color. Tooltips list every series at the x under the pointer, value first. Every chart has a table view.
+Marks are thin and quiet: 2px lines, 8px points with a ring in the background color, bars at most 24px wide with rounded ends, fills at 10 %, a hairline grid, a legend only for two or more series. Series take a fixed order of eight colors chosen to stay distinct for color-vision deficiencies, with their own steps for dark themes; ordered series (`colors: sequential`) take steps of one blue instead, from the lightest to the darkest (the reverse on dark themes). Stacked bars are separated by a hairline of the background and rounded only at the top of each column. Text uses the theme's text colors, never a series color. Tooltips list every series at the x under the pointer, value first. Every chart has a table view.
 
 ## Development
 
@@ -154,4 +191,4 @@ npm run typecheck
 npm run build      # dist/main.js; with VAULT_PLUGIN_DIR=<vault>/.obsidian/plugins/data-charts, also installed there
 ```
 
-`src/` holds the logic and knows nothing of Obsidian or of the chart library: the expression language (`expr.ts`), the block (`spec.ts`), files and series (`data.ts`), ranges (`ranges.ts`) and the ECharts option (`option.ts`); `src/obsidian/` draws with [Apache ECharts](https://echarts.apache.org), importing only the parts it uses. The tests run with Node's test runner; the examples of this README are among them. MIT license.
+`src/` holds the logic and knows nothing of Obsidian or of the chart library: the expression language (`expr.ts`), the block (`spec.ts`), files and series (`data.ts`), ranges (`ranges.ts`), the labels of a time axis (`timeaxis.ts`) and the ECharts option (`option.ts`); `src/obsidian/` draws with [Apache ECharts](https://echarts.apache.org), importing only the parts it uses. The tests run with Node's test runner; the examples of this README are among them. MIT license.

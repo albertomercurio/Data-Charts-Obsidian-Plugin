@@ -3,6 +3,7 @@
 
 import { asNumber, type Fields, test } from "./expr";
 import type { AxisKind, Bucket, ChartSpec, Series } from "./spec";
+import { unitNext } from "./timeaxis";
 
 export type Row = Record<string, unknown>;
 
@@ -14,6 +15,8 @@ export interface Point {
   high?: number;
   /** The row it comes from, for tables and tooltips (not for aggregated points). */
   row?: Row;
+  /** A total over a week, month or year: its start and end; x is its middle. */
+  span?: [number, number];
 }
 
 export interface PreparedSeries {
@@ -179,6 +182,12 @@ function aggregate(points: Point[], series: Series, kind: AxisKind): Point[] {
     .sort((a, b) => a[0] - b[0])
     .map(([x, group]) => {
       const point: Point = { x, y: combine(group.map((p) => p.y), agg.fn) };
+      // A week, month or year sits in its middle, between the labels of its start and of the next one.
+      if (agg.bucket && agg.bucket !== "day" && kind === "time") {
+        const end = unitNext(x, agg.bucket);
+        point.span = [x, end];
+        point.x = x + (end - x) / 2;
+      }
       const lows = group.map((p) => p.low).filter((v): v is number => v !== undefined);
       const highs = group.map((p) => p.high).filter((v): v is number => v !== undefined);
       if (lows.length) point.low = combine(lows, "avg");
@@ -260,7 +269,7 @@ export function prepare(rows: Row[], spec: ChartSpec, self: Fields = {}): Prepar
       }
       points.sort((a, b) => a.x - b.x);
       points = rolling(aggregate(points, s, kind), s);
-      if (kind === "time" && datesOnly) datesOnly = points.every((p) => new Date(p.x).getHours() === 0 && new Date(p.x).getMinutes() === 0);
+      if (kind === "time" && datesOnly) datesOnly = points.every((p) => new Date(p.span?.[0] ?? p.x).getHours() === 0 && new Date(p.span?.[0] ?? p.x).getMinutes() === 0);
       return { series: s, points };
     });
     return { key, label: spec.labels[key] ?? key, series };

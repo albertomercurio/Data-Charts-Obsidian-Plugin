@@ -11,6 +11,26 @@
   margin-bottom: 0.25em;
 }
 
+.data-chart-description {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-bottom: 0.5em;
+  max-width: 70ch;
+}
+
+.data-chart-description > :first-child {
+  margin-top: 0;
+}
+
+.data-chart-description > :last-child {
+  margin-bottom: 0;
+}
+
+.data-chart-description p {
+  margin: 0 0 0.35em;
+}
+
 .data-chart-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -158,6 +178,16 @@
 
 .data-chart-tooltip-name {
   color: var(--text-muted);
+}
+
+.data-chart-tooltip-total {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.data-chart-key.is-empty {
+  background: transparent;
 }
 
 .data-chart-tooltip-band {

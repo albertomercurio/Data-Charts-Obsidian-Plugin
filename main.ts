@@ -6,7 +6,7 @@ import { BarChart, LineChart, ScatterChart } from "echarts/charts";
 import { DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { normalizePath, Plugin, type TAbstractFile, TFile } from "obsidian";
+import { type Component, MarkdownRenderer, normalizePath, Plugin, type TAbstractFile, TFile } from "obsidian";
 import { globMatcher, parseData, type Row } from "./src/data";
 import type { ChartSpec } from "./src/spec";
 import { ChartBlock, type Host } from "./src/obsidian/block";
@@ -68,6 +68,10 @@ export default class DataChartsPlugin extends Plugin implements Host {
     if (!(file instanceof TFile)) return {};
     const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     return { ...frontmatter, "file.name": file.basename, "file.path": file.path, "file.folder": file.parent?.path ?? "" };
+  }
+
+  async markdown(text: string, el: HTMLElement, sourcePath: string, component: Component): Promise<void> {
+    await MarkdownRenderer.render(this.app, text, el, sourcePath, component);
   }
 
   shareRange(from: ChartBlock, label: string): void {

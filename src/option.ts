@@ -4,7 +4,8 @@
 // grid, a legend only for two or more series. Colors come from the theme.
 
 import type { Facet, Point, Prepared } from "./data";
-import type { ChartSpec, Series } from "./spec";
+import type { Bucket, ChartSpec, Series } from "./spec";
+import { timeAxis, timeLabel, timeUnit } from "./timeaxis";
 
 export interface Theme {
   dark: boolean;
@@ -20,6 +21,8 @@ export interface Theme {
   font: string;
   /** Series colors, in a fixed order. */
   palette: string[];
+  /** One hue from the surface outwards, for ordered series. */
+  ramp: string[];
   /** Points outside their reference band. */
   critical: string;
 }
@@ -28,6 +31,11 @@ export interface Theme {
 export const PALETTE = {
   light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"],
   dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
+};
+/** One blue from light to dark (on dark themes, from dark to light): every step clears 2:1 against the surface. */
+export const RAMP = {
+  light: ["#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281"],
+  dark: ["#184f95", "#1c5cab", "#256abf", "#2a78d6", "#3987e5", "#5598e7", "#6da7ec", "#86b6ef", "#9ec5f4"],
 };
 export const CRITICAL = "#d03b3b";
 
@@ -42,6 +50,7 @@ export const LIGHT: Theme = {
   accent: "#2a78d6",
   font: "system-ui, -apple-system, 'Segoe UI', sans-serif",
   palette: PALETTE.light,
+  ramp: RAMP.light,
   critical: CRITICAL,
 };
 
@@ -50,36 +59,109 @@ export interface Hooks {
   tooltip?: (params: unknown) => HTMLElement | string;
 }
 
+/** What the time axis needs to place its labels: the window shown, the width of the plot, the language. */
+export interface View {
+  window: [number, number] | null;
+  width: number;
+  locale: string;
+}
 
 type Option = Record<string, unknown>;
 
 /** Series ids: the bands are drawn as two stacked series that are not listed. */
 export const bandId = (i: number, part: "low" | "high") => `band:${i}:${part}`;
 
-/** Compact numbers for the y axis: 950, 9,500, 12K, 1.2M. */
+/** Compact numbers for the y axis: 950, 9.5K, 12K, 1.25M. */
 export function compact(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1e6) return `${trim(value / 1e6)}M`;
-  if (abs >= 1e4) return `${trim(value / 1e3)}K`;
-  return Number.isInteger(value) ? value.toLocaleString("en-US") : String(trim(value));
+  if (abs >= 1e3) return `${trim(value / 1e3)}K`;
+  return String(trim(value));
 }
 const trim = (value: number) => Math.round(value * 100) / 100;
 
-function data(points: Point[], series: Series, theme: Theme): unknown[] {
+/** Seconds as 5:30 or 1:05:30. */
+export function duration(seconds: number): string {
+  const sign = seconds < 0 ? "-" : "";
+  const total = Math.round(Math.abs(seconds));
+  const [h, m, s] = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h ? `${sign}${h}:${pad(m)}:${pad(s)}` : `${sign}${m}:${pad(s)}`;
+}
+
+/** The color of each series of a block. */
+export function seriesColors(spec: ChartSpec, theme: Theme): string[] {
+  const n = spec.series.length;
+  if (spec.colors === "sequential") {
+    const steps = theme.ramp;
+    const last = steps.length - 1;
+    // Evenly spaced steps, from the one nearest the surface to the farthest.
+    return spec.series.map((_, i) => steps[n === 1 ? Math.floor(last / 2) : Math.round((Math.min(i, last) * last) / Math.min(n - 1, last))]);
+  }
+  if (Array.isArray(spec.colors)) {
+    const list = spec.colors;
+    return spec.series.map((s, i) => s.color ?? list[i % list.length]);
+  }
+  return spec.series.map((s, i) => s.color ?? theme.palette[i % theme.palette.length]);
+}
+
+/** The unit of the y axis: the block's, or the one every series shares. */
+export function yUnit(spec: ChartSpec): string | undefined {
+  if (spec.y.unit !== undefined) return spec.y.unit || undefined;
+  const units = new Set(spec.series.map((s) => s.unit ?? ""));
+  return units.size === 1 ? [...units][0] || undefined : undefined;
+}
+
+/** The bucket shared by every series, when they are all bars of weekly, monthly or yearly totals. */
+export function sharedBucket(spec: ChartSpec): Bucket | null {
+  const buckets = new Set(spec.series.map((s) => (s.type === "bar" && s.agg?.bucket && s.agg.bucket !== "day" ? s.agg.bucket : null)));
+  return buckets.size === 1 ? [...buckets][0] : null;
+}
+
+/** The labels of a time axis for what is shown: days, weeks, months…; for spans of hours, ECharts' own. */
+export function timeAxisOption(spec: ChartSpec, theme: Theme, view: View, span: [number, number]): Option {
+  const shown = view.window ?? span;
+  const bucket = sharedBucket(spec);
+  const unit = timeUnit(shown[1] - shown[0], view.width, bucket);
+  if (!unit) return { axisLabel: { customValues: null, formatter: null }, axisTick: { show: false, customValues: null }, splitLine: { show: false } };
+  // Labels for the whole extent, so that panning finds them; the chart shows those in the window.
+  const axis = timeAxis(span, unit, bucket === unit);
+  return {
+    axisLabel: {
+      customValues: axis.labels,
+      hideOverlap: true,
+      formatter: (value: number, index: number) => {
+        const named = axis.named.has(value) || index === 0;
+        const text = timeLabel(value, unit, named, view.locale);
+        return named ? `{named|${text}}` : text;
+      },
+      rich: { named: { color: theme.secondary, fontWeight: 600, fontFamily: theme.font, fontSize: 11 } },
+    },
+    axisTick: { show: false, customValues: axis.lines },
+    splitLine: { show: axis.lines.length > 0, lineStyle: { color: theme.grid, width: 1, type: "solid" } },
+  };
+}
+
+function data(points: Point[], series: Series, theme: Theme, tops: Set<number> | null): unknown[] {
   return points.map((p) => {
     const out = series.band && ((p.low !== undefined && p.y < p.low) || (p.high !== undefined && p.y > p.high));
-    return out ? { value: [p.x, p.y], itemStyle: { color: theme.critical } } : [p.x, p.y];
+    if (out) return { value: [p.x, p.y], itemStyle: { color: theme.critical } };
+    // Stacked bars: only the top of each column is rounded.
+    if (tops?.has(p.x)) return { value: [p.x, p.y], itemStyle: { borderRadius: [4, 4, 0, 0] } };
+    return [p.x, p.y];
   });
 }
 
-function markSeries(prepared: { series: Series; points: Point[] }, i: number, theme: Theme): Option[] {
+function markSeries(prepared: { series: Series; points: Point[] }, i: number, color: string, theme: Theme, tops: Set<number> | null): Option[] {
   const { series, points } = prepared;
-  const color = series.color ?? theme.palette[i % theme.palette.length];
-  const base: Option = { id: `s:${i}`, name: series.name, data: data(points, series, theme), z: 3, emphasis: { disabled: true } };
+  const base: Option = { id: `s:${i}`, name: series.name, data: data(points, series, theme, tops), z: 3, emphasis: { disabled: true } };
   const ring = { color, borderColor: theme.surface, borderWidth: 2 };
   let mark: Option;
   if (series.type === "bar") {
-    mark = { ...base, type: "bar", barMaxWidth: 24, itemStyle: { color, borderRadius: [4, 4, 0, 0] } };
+    mark = series.stack
+      ? // A gap in the surface color between the parts of a column.
+        { ...base, type: "bar", stack: series.stack, barMaxWidth: 24, itemStyle: { color, borderColor: theme.surface, borderWidth: 1, borderRadius: 0 } }
+      : { ...base, type: "bar", barMaxWidth: 24, itemStyle: { color, borderRadius: [4, 4, 0, 0] } };
   } else if (series.type === "scatter") {
     mark = { ...base, type: "scatter", symbolSize: 8, itemStyle: ring };
   } else {
@@ -92,8 +174,9 @@ function markSeries(prepared: { series: Series; points: Point[] }, i: number, th
       itemStyle: ring,
       lineStyle: { width: 2, cap: "round", join: "round", color },
       smooth: series.smooth ?? false,
+      ...(series.stack ? { stack: series.stack } : {}),
       ...(points.length > 1500 ? { sampling: "lttb" } : {}),
-      ...(series.type === "area" ? { areaStyle: { color, opacity: 0.1 } } : {}),
+      ...(series.type === "area" ? { areaStyle: { color, opacity: series.stack ? 0.6 : 0.1 } } : {}),
     };
   }
   if (series.goal !== undefined) {
@@ -101,7 +184,8 @@ function markSeries(prepared: { series: Series; points: Point[] }, i: number, th
       silent: true,
       symbol: "none",
       lineStyle: { color: theme.muted, width: 1, type: "solid" },
-      label: { position: "insideEndTop", color: theme.muted, formatter: compact(series.goal) },
+      // On a patch of the background, so that a line passing by does not cross the number.
+      label: { position: "insideEndTop", color: theme.secondary, backgroundColor: theme.surface, padding: [1, 4], borderRadius: 3, formatter: compact(series.goal) },
       data: [{ yAxis: series.goal }],
     };
   }
@@ -117,15 +201,32 @@ function markSeries(prepared: { series: Series; points: Point[] }, i: number, th
   return out;
 }
 
-/** The ECharts option of one facet. */
-export function buildOption(facet: Facet, prepared: Prepared, spec: ChartSpec, theme: Theme, hooks: Hooks = {}): Option {
+/** For each stacked bar series, the x where it is the top of its column. */
+function stackTops(facet: Facet): (Set<number> | null)[] {
+  const tops: (Set<number> | null)[] = facet.series.map(() => null);
+  const top = new Map<string, Map<number, number>>();
+  facet.series.forEach((s, i) => {
+    if (s.series.type !== "bar" || !s.series.stack) return;
+    const columns = top.get(s.series.stack) ?? new Map<number, number>();
+    for (const p of s.points) if (p.y !== 0) columns.set(p.x, i);
+    top.set(s.series.stack, columns);
+  });
+  for (const columns of top.values()) for (const [x, i] of columns) (tops[i] ??= new Set()).add(x);
+  return tops;
+}
+
+/** The ECharts option of one facet; with a view, a time axis gets labels chosen for the window and the width. */
+export function buildOption(facet: Facet, prepared: Prepared, spec: ChartSpec, theme: Theme, hooks: Hooks = {}, view?: View): Option {
   const visible = facet.series.filter((s) => s.points.length);
   const legend = visible.length >= 2;
+  const colors = seriesColors(spec, theme);
   const bars = facet.series.some((s) => s.series.type === "bar");
   const onlyScatter = facet.series.every((s) => s.series.type === "scatter");
   const zero = spec.y.zero ?? bars;
   const filterMode = bars || onlyScatter ? "filter" : "weakFilter";
   const axisText = { color: theme.muted, fontFamily: theme.font, fontSize: 11 };
+  const unit = yUnit(spec);
+  const valueText = spec.y.format === "duration" ? duration : compact;
 
   const xAxis: Option = {
     type: prepared.kind,
@@ -136,25 +237,33 @@ export function buildOption(facet: Facet, prepared: Prepared, spec: ChartSpec, t
     ...(prepared.kind === "category" ? { data: prepared.categories, boundaryGap: true } : { boundaryGap: bars ? ["2%", "2%"] : false }),
     ...(prepared.kind === "value" ? { scale: true } : {}),
   };
+  const span = prepared.kind === "time" && view ? extentOf(prepared) : null;
+  if (span && view) {
+    const time = timeAxisOption(spec, theme, view, span);
+    Object.assign(xAxis, time, { axisLabel: { ...axisText, ...(time.axisLabel as Option) } });
+  }
   const yAxis: Option = {
     type: spec.y.log ? "log" : "value",
     scale: !zero,
+    inverse: spec.y.inverse ?? false,
     // Bars grow from zero: the axis includes it (scale: false), negative bars included.
     ...(spec.y.min !== undefined ? { min: spec.y.min } : {}),
     ...(spec.y.max !== undefined ? { max: spec.y.max } : {}),
     axisLine: { show: false },
     axisTick: { show: false },
-    axisLabel: { ...axisText, formatter: (v: number) => compact(v) },
+    axisLabel: { ...axisText, formatter: (v: number) => valueText(v) },
     splitLine: { lineStyle: { color: theme.grid, width: 1, type: "solid" } },
-    ...(spec.y.unit ? { name: spec.y.unit, nameLocation: "end", nameGap: 8, nameTextStyle: { ...axisText, align: "left" } } : {}),
+    // The unit above the axis (below it when the axis is upside down, where its top is).
+    ...(unit ? { name: unit, nameLocation: spec.y.inverse ? "start" : "end", nameGap: 10, nameTextStyle: { ...axisText, align: "left" } } : {}),
   };
+  const tops = stackTops(facet);
 
   return {
     animationDuration: 300,
     animationDurationUpdate: 200,
     backgroundColor: "transparent",
     textStyle: { fontFamily: theme.font, color: theme.secondary },
-    grid: { left: 4, right: 16, top: legend || spec.y.unit ? 32 : 12, bottom: 40, containLabel: true },
+    grid: { left: 4, right: 16, top: legend && unit ? 46 : legend || unit ? 30 : 12, bottom: 40, containLabel: true },
     ...(legend
       ? {
           legend: {
@@ -202,8 +311,15 @@ export function buildOption(facet: Facet, prepared: Prepared, spec: ChartSpec, t
         textStyle: axisText,
       },
     ],
-    series: facet.series.flatMap((s, i) => markSeries(s, i, theme)),
+    series: facet.series.flatMap((s, i) => markSeries(s, i, colors[i], theme, tops[i])),
   };
+}
+
+/** The extent of a time axis, weeks and months of totals included whole. */
+export function extentOf(prepared: Prepared): [number, number] | null {
+  let [min, max] = [Infinity, -Infinity];
+  for (const f of prepared.facets) for (const s of f.series) for (const p of s.points) [min, max] = [Math.min(min, p.span?.[0] ?? p.x), Math.max(max, p.span?.[1] ?? p.x)];
+  return min <= max ? [min, max] : null;
 }
 
 /** The zoom of a window, for an option or an action. */

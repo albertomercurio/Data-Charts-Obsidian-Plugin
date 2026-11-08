@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { parse } from "yaml";
 import { axisKind, bucketStart, extent, globMatcher, parseCsv, parseData, parseTime, prepare, tableRows } from "../src/data";
 import { compile, test as holds } from "../src/expr";
-import { bandId, buildOption, compact, LIGHT } from "../src/option";
+import { bandId, buildOption, compact, duration, LIGHT, RAMP, seriesColors, timeAxisOption, yUnit } from "../src/option";
+import { timeAxis, timeLabel, timeUnit, unitNext, unitStart } from "../src/timeaxis";
 import { narrows, rangesFor, windowOf } from "../src/ranges";
 import { parseRange, parseSpec } from "../src/spec";
 
@@ -100,7 +101,10 @@ test("prepare: filter, aggregation by week, moving averages", () => {
   assert.equal(weekly.kind, "time");
   assert.equal(weekly.datesOnly, true);
   // 2 March 2026 is a Monday: days 3–8 in its week (1 March, a Sunday, belongs to the week before and is filtered out anyway).
-  assert.deepEqual(weekly.facets[0].series[0].points.map((p) => [new Date(p.x).getDate(), p.y]), [[2, 3000 + 4000 + 5000 + 6000 + 7000 + 8000], [9, 9000 + 10000 + 11000 + 12000 + 13000 + 14000]]);
+  // A week of totals spans Monday to Monday and sits in its middle, Thursday at noon.
+  const points = weekly.facets[0].series[0].points;
+  assert.deepEqual(points.map((p) => [new Date(p.span![0]).getDate(), p.y]), [[2, 3000 + 4000 + 5000 + 6000 + 7000 + 8000], [9, 9000 + 10000 + 11000 + 12000 + 13000 + 14000]]);
+  assert.deepEqual([new Date(points[0].x).getDate(), new Date(points[0].x).getHours(), new Date(points[0].span![1]).getDate()], [5, 12, 9]);
   const rolling = prepare(days, spec("source: d.jsonl\nx: date\ny: steps\nrolling: 7"));
   assert.equal(rolling.facets[0].series[0].points.length, 8);
   assert.equal(rolling.facets[0].series[0].points[0].y, 4000);
@@ -160,6 +164,76 @@ test("the chart option: marks, one axis, legend only for two series, bands, goal
   assert.equal(ob.dataZoom[0].zoomOnMouseWheel, "ctrl");
 });
 
-test("compact numbers for the y axis", () => {
-  assert.deepEqual([compact(950), compact(9500), compact(12000), compact(1250000), compact(1.234)], ["950", "9,500", "12K", "1.25M", "1.23"]);
+test("numbers on the y axis: compact, the same way on one axis; durations", () => {
+  assert.deepEqual([compact(950), compact(5000), compact(9500), compact(12000), compact(1250000), compact(1.234)], ["950", "5K", "9.5K", "12K", "1.25M", "1.23"]);
+  assert.deepEqual([duration(330), duration(3930), duration(59.6)], ["5:30", "1:05:30", "1:00"]);
+});
+
+test("time axis: the unit fits the window and the width; months are named, never lost", () => {
+  const DAY = 86400000;
+  assert.equal(timeUnit(7 * DAY, 700), "day");
+  assert.equal(timeUnit(30 * DAY, 700), "week");
+  assert.equal(timeUnit(92 * DAY, 700), "week");
+  assert.equal(timeUnit(92 * DAY, 300), "half");
+  assert.equal(timeUnit(92 * DAY, 200), "month");
+  assert.equal(timeUnit(365 * DAY, 700), "month");
+  assert.equal(timeUnit(3 * 365 * DAY, 700), "quarter");
+  assert.equal(timeUnit(20 * 365 * DAY, 700), "year");
+  assert.equal(timeUnit(6 * 3600000, 700), null);
+  // Weekly totals never get daily labels.
+  assert.equal(timeUnit(10 * DAY, 700, "week"), "week");
+  assert.equal(unitStart(local(2026, 10, 8), "week"), local(2026, 10, 5));
+  assert.equal(unitNext(local(2026, 10, 3), "half"), local(2026, 10, 16));
+  assert.equal(unitNext(local(2026, 10, 20), "half"), local(2026, 11, 1));
+
+  // Mondays from 31 August to 9 November: the first Monday of each month names it.
+  const weeks = timeAxis([local(2026, 8, 31), local(2026, 11, 9)], "week");
+  assert.equal(weeks.labels[0], local(2026, 8, 31));
+  assert.deepEqual([...weeks.named].map((t) => new Date(t).getDate()), [31, 7, 5, 2]);
+  assert.deepEqual(weeks.lines, [local(2026, 9, 1), local(2026, 10, 1), local(2026, 11, 1)]);
+  assert.equal(timeLabel(local(2026, 10, 5), "week", true, "en-GB"), "5 Oct");
+  assert.equal(timeLabel(local(2026, 10, 12), "week", false, "en-GB"), "12");
+  assert.equal(timeLabel(local(2027, 1, 4), "week", true, "en-GB"), "4 Jan 2027");
+  assert.equal(timeLabel(local(2026, 10, 1), "month", false, "en-GB"), "Oct");
+  assert.equal(timeLabel(local(2026, 10, 1), "month", true, "en-GB"), "Oct 2026");
+
+  // Bars of weekly totals: labels under the bars, no hairlines through them.
+  const bars = timeAxis([local(2026, 9, 7), local(2026, 10, 19)], "week", true);
+  assert.equal(bars.labels[0], (local(2026, 9, 7) + local(2026, 9, 14)) / 2);
+  assert.equal(timeLabel(bars.labels[0], "week", true, "en-GB"), "7 Sept");
+  assert.deepEqual(bars.lines, []);
+});
+
+test("the specification: description, stacks, colors, a y axis upside down in durations", () => {
+  const s = spec('source: w.jsonl\nx: date\ntitle: Zones\ndescription: |\n  Minutes **per zone**.\ntype: bar\nstack: true\ncolors: sequential\nagg: week/sum\nyaxis: {inverse: true, format: duration}\nseries: [z1, z2, z3]');
+  assert.equal(s.description, "Minutes **per zone**.");
+  assert.deepEqual(s.series.map((x) => x.stack), ["stack", "stack", "stack"]);
+  assert.equal(s.colors, "sequential");
+  assert.deepEqual(s.y, { inverse: true, format: "duration" });
+  assert.throws(() => spec("source: a.csv\nx: date\ny: v\ncolors: rainbow"), { message: /^colors:/ });
+  assert.throws(() => spec("source: a.csv\nx: date\ny: v\nyaxis: {format: percent}"), { message: /^yaxis:/ });
+});
+
+test("the chart option: stacked bars rounded on top, colors in one hue, the unit on the axis", () => {
+  const rows = [
+    { date: "2026-03-02", z1: 10, z2: 5, z3: 0 },
+    { date: "2026-03-09", z1: 0, z2: 20, z3: 15 },
+  ];
+  const s = spec("source: w.jsonl\nx: date\ntype: bar\nstack: true\ncolors: sequential\nunit: min\nseries: [z1, z2, z3]");
+  const p = prepare(rows, s);
+  const option = buildOption(p.facets[0], p, s, LIGHT) as any;
+  assert.deepEqual(option.series.map((x: any) => x.stack), ["stack", "stack", "stack"]);
+  // The top of the first column is z2 (z3 is 0 there), of the second z3.
+  assert.deepEqual(option.series[1].data[0].itemStyle.borderRadius, [4, 4, 0, 0]);
+  assert.deepEqual(option.series[2].data[0], [local(2026, 3, 2), 0]);
+  assert.deepEqual(option.series[2].data[1].itemStyle.borderRadius, [4, 4, 0, 0]);
+  assert.deepEqual(seriesColors(s, LIGHT), [RAMP.light[0], RAMP.light[4], RAMP.light[8]]);
+  assert.equal(yUnit(s), "min");
+  assert.equal(option.yAxis.name, "min");
+  assert.equal(yUnit(spec("source: a\nx: d\nseries: [{y: a, unit: kg}, {y: b, unit: '%'}]")), undefined);
+
+  // With the width of the plot, a time axis labels the weeks it shows.
+  const time = timeAxisOption(s, LIGHT, { window: null, width: 600, locale: "en-GB" }, [local(2026, 3, 2), local(2026, 3, 16)]) as any;
+  assert.ok(time.axisLabel.customValues.length >= 2);
+  assert.equal(time.axisLabel.formatter(time.axisLabel.customValues[0], 0), "{named|2 Mar}");
 });

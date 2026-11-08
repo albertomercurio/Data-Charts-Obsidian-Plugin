@@ -10,7 +10,7 @@ import { parseSpec } from "../src/spec";
 const blocks = [...readFileSync("README.md", "utf8").matchAll(/```data-chart\n([\s\S]*?)```/g)].map((m) => m[1]);
 
 const rows: Record<string, unknown>[] = [
-  ...Array.from({ length: 30 }, (_, i) => ({ date: `2026-03-${String(i + 1).padStart(2, "0")}`, steps: 8000 + i * 100, sport: i % 3 ? "running" : "walking", distance_km: 5 + (i % 4), hr_avg: 150, duration_min: 30 + i, t: i, hr: 120 + i })),
+  ...Array.from({ length: 30 }, (_, i) => ({ date: `2026-03-${String(i + 1).padStart(2, "0")}`, steps: 8000 + i * 100, sport: i % 3 ? "running" : "walking", distance_km: 5 + (i % 4), hr_avg: 150, duration_min: 30 + i, pace_s_km: 330 + i, z1_min: i, z2_min: 10, z3_min: 2, t: i, hr: 120 + i })),
   { date: "2026-03-02", analyte: "ferritin", value: 20, low: 30, high: 400, unit: "ng/mL" },
   { date: "2026-06-02", analyte: "ferritin", value: 60, low: 30, high: 400, unit: "ng/mL" },
 ];

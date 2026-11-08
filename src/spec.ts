@@ -36,6 +36,8 @@ export interface Series {
   points?: boolean;
   smooth?: boolean;
   unit?: string;
+  /** Series with the same stack are drawn on top of each other. */
+  stack?: string;
 }
 
 export interface ChartSpec {
@@ -44,6 +46,8 @@ export interface ChartSpec {
   xKind?: AxisKind;
   type: ChartType;
   title?: string;
+  /** Markdown shown under the title. */
+  description?: string;
   height: number;
   where?: Compiled;
   facet?: string;
@@ -53,7 +57,9 @@ export interface ChartSpec {
   ranges?: Range[];
   series: Series[];
   group?: string;
-  y: { min?: number; max?: number; zero?: boolean; log?: boolean; unit?: string };
+  y: { min?: number; max?: number; zero?: boolean; log?: boolean; unit?: string; inverse?: boolean; format?: "duration" };
+  /** Series colors: one hue from light to dark (ordered series), or a list. */
+  colors?: "sequential" | string[];
   columns?: string[];
   sort?: { field: string; desc: boolean };
   limit?: number;
@@ -63,10 +69,10 @@ const MARKS: MarkType[] = ["line", "area", "bar", "scatter"];
 const BUCKETS: Bucket[] = ["day", "week", "month", "year"];
 const FNS: AggFn[] = ["sum", "avg", "min", "max", "last", "count"];
 const KEYS = new Set([
-  "source", "x", "type", "title", "height", "where", "facet", "facets", "labels", "range", "ranges", "series", "y",
-  "name", "color", "rolling", "agg", "band", "goal", "points", "smooth", "unit", "group", "yaxis", "columns", "sort", "limit",
+  "source", "x", "type", "title", "description", "height", "where", "facet", "facets", "labels", "range", "ranges", "series", "y",
+  "name", "color", "colors", "rolling", "agg", "band", "goal", "points", "smooth", "unit", "stack", "group", "yaxis", "columns", "sort", "limit",
 ]);
-const SERIES_KEYS = new Set(["y", "name", "type", "color", "rolling", "agg", "band", "goal", "points", "smooth", "unit"]);
+const SERIES_KEYS = new Set(["y", "name", "type", "color", "rolling", "agg", "band", "goal", "points", "smooth", "unit", "stack"]);
 
 const DAY = 86400000;
 const UNITS: Record<string, { ms?: number; months?: number }> = { h: { ms: 3600000 }, d: { ms: DAY }, w: { ms: 7 * DAY }, m: { months: 1 }, y: { months: 12 } };
@@ -146,6 +152,7 @@ function parseSeries(raw: unknown, defaults: Record<string, unknown>, chartType:
   if (merged.points !== undefined) series.points = merged.points === true;
   if (merged.smooth !== undefined) series.smooth = merged.smooth === true;
   if (merged.unit !== undefined) series.unit = String(merged.unit);
+  if (merged.stack !== undefined && merged.stack !== false) series.stack = merged.stack === true ? "stack" : String(merged.stack);
   return series;
 }
 
@@ -186,6 +193,12 @@ export function parseSpec(source: string, parseYaml: (text: string) => unknown):
   const spec: ChartSpec = { sources, x, type, height: 300, labels: {}, series, y: {} };
   if (xKind) spec.xKind = xKind;
   if (raw.title !== undefined) spec.title = String(raw.title);
+  if (raw.description !== undefined) spec.description = String(raw.description).trim();
+  if (raw.colors !== undefined) {
+    if (raw.colors === "sequential") spec.colors = "sequential";
+    else if (Array.isArray(raw.colors) && raw.colors.length && raw.colors.every((c) => typeof c === "string")) spec.colors = raw.colors as string[];
+    else fail("colors", "sequential (one hue, light to dark, for ordered series) or a list of CSS colors");
+  }
   if (raw.height !== undefined) {
     if (typeof raw.height !== "number" || raw.height < 120 || raw.height > 2000) fail("height", "a number of pixels from 120 to 2000");
     spec.height = raw.height as number;
@@ -210,13 +223,18 @@ export function parseSpec(source: string, parseYaml: (text: string) => unknown):
   }
   if (raw.group !== undefined) spec.group = String(raw.group);
   if (raw.yaxis !== undefined) {
-    if (!isRecord(raw.yaxis)) fail("yaxis", "a map: min, max, zero, log, unit");
+    if (!isRecord(raw.yaxis)) fail("yaxis", "a map: min, max, zero, log, unit, inverse, format");
     const axis = raw.yaxis as Record<string, unknown>;
     if (typeof axis.min === "number") spec.y.min = axis.min;
     if (typeof axis.max === "number") spec.y.max = axis.max;
     if (axis.zero !== undefined) spec.y.zero = axis.zero === true;
     if (axis.log !== undefined) spec.y.log = axis.log === true;
     if (axis.unit !== undefined) spec.y.unit = String(axis.unit);
+    if (axis.inverse !== undefined) spec.y.inverse = axis.inverse === true;
+    if (axis.format !== undefined) {
+      if (axis.format !== "duration") fail("yaxis", 'format: "duration" (values in seconds, shown as 5:30 or 1:05:30)');
+      spec.y.format = "duration";
+    }
   }
   if (raw.columns !== undefined) {
     if (!Array.isArray(raw.columns)) fail("columns", "a list of fields");
