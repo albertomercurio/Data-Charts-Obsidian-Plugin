@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parse } from "yaml";
 import { axisKind, bucketStart, extent, globMatcher, parseCsv, parseData, parseTime, prepare, tableRows } from "../src/data";
 import { compile, test as holds } from "../src/expr";
-import { bandId, buildOption, compact, duration, LIGHT, PALETTE, RAMP, resolveColor, seriesColors, timeAxisOption, yUnit } from "../src/option";
+import { bandId, buildOption, compact, duration, LIGHT, niceStep, PALETTE, RAMP, resolveColor, seriesColors, timeAxisOption, yUnit } from "../src/option";
 import { timeAxis, timeLabel, timeUnit, unitNext, unitStart } from "../src/timeaxis";
 import { narrows, rangesFor, windowOf } from "../src/ranges";
 import { parseRange, parseSpec } from "../src/spec";
@@ -147,9 +147,12 @@ test("the chart option: marks, one axis, legend only for two series, bands, goal
   assert.equal(line.symbolSize, 8);
   assert.equal(line.itemStyle.borderWidth, 2);
   assert.equal(line.showSymbol, true);
-  assert.deepEqual(line.data[1], { value: [local(2026, 6, 10), 20], itemStyle: { color: LIGHT.critical } });
+  // Below the band: a red triangle pointing down.
+  assert.deepEqual(line.data[1], { value: [local(2026, 6, 10), 20], symbol: "triangle", symbolSize: 11, symbolRotate: 180, itemStyle: { color: LIGHT.critical } });
   assert.deepEqual(option.series[1].data[0], [local(2026, 1, 10), 370]);
-  assert.equal(option.series[1].areaStyle.opacity, 0.12);
+  // The band is green, with its edges drawn.
+  assert.equal(option.series[1].areaStyle.color, "rgba(12, 163, 12, 0.12)");
+  assert.equal(option.series[1].lineStyle.color, "rgba(12, 163, 12, 0.55)");
 
   const bars = spec("source: d.jsonl\nx: date\nseries:\n  - {y: steps, type: bar, goal: 10000}\n  - {y: steps, rolling: 7, name: Average}");
   const pb = prepare(days, bars);
@@ -162,6 +165,22 @@ test("the chart option: marks, one axis, legend only for two series, bands, goal
   assert.equal(ob.series[0].markLine.data[0].yAxis, 10000);
   assert.deepEqual(ob.series.map((x: any) => x.lineStyle?.color ?? x.itemStyle.color), [LIGHT.palette[0], LIGHT.palette[1]]);
   assert.equal(ob.dataZoom[0].zoomOnMouseWheel, "ctrl");
+});
+
+test("a single date: room around it, the band across the chart, no slider", () => {
+  const one = [{ date: "2026-08-06", analyte: "mcv", value: 75, low: 76, high: 96 }];
+  const s = spec("source: l.jsonl\nx: date\ny: value\nband: [low, high]\npoints: true");
+  const p = prepare(one, s);
+  const option = buildOption(p.facets[0], p, s, LIGHT, {}, { window: null, width: 300, locale: "en-GB" }) as any;
+  assert.deepEqual([option.xAxis.min, option.xAxis.max], [local(2026, 8, 6) - 15 * 86400000, local(2026, 8, 6) + 15 * 86400000]);
+  assert.equal(option.dataZoom[1].show, false);
+  assert.deepEqual(option.series[2].markArea.data, [[{ yAxis: 76 }, { yAxis: 96 }]]);
+  assert.equal(option.series[2].data[0].symbolRotate, 180);
+  // Room around the band, on round numbers: 75–96 with a quarter more each side, in steps of 10.
+  assert.deepEqual([option.yAxis.min, option.yAxis.max, option.yAxis.interval], [60, 110, 10]);
+  assert.deepEqual([niceStep(21), niceStep(2), niceStep(0.37), niceStep(0)], [5, 0.5, 0.1, 1]);
+  // Labels of days or weeks, not of hours.
+  assert.ok(option.xAxis.axisLabel.customValues.length >= 2);
 });
 
 test("numbers on the y axis: compact, the same way on one axis; durations", () => {

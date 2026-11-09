@@ -8,7 +8,7 @@ Interactive, responsive charts of the data files in your vault — CSV, JSON and
 - **Series**: lines, areas, bars, points, stacked bars with their total; moving averages by points or by time (`7d`); aggregation by day, week, month or year; expressions (`distance_km * 1000 / (hr_avg * duration_min)`).
 - **A readable time axis**: days, weeks, months or years as the window and the width allow; the first label of each month names it, hairlines mark where months begin, and weekly or monthly totals are labelled under their bar.
 - **Descriptions**: a few lines of Markdown under the title, to say what the chart shows and how to read it.
-- **Reference bands**: a shaded range from two fields of each row (lab reference intervals, targets); points outside it are marked and the tooltip says so.
+- **Reference bands**: a green range from two fields of each row (lab reference intervals) or two numbers (a target); points outside it are red triangles pointing up or down, and the tooltip says so.
 - **Small multiples**: `facet` draws one chart per value of a field (one per lab test, per sport…), zooming together.
 - **Tables**: a table view of every chart, and `type: table` for rows filtered by the note itself (`where: date == this.Date`).
 - **Live**: a chart redraws when its files change — an import running in the background updates the note you are reading.
@@ -16,11 +16,16 @@ Interactive, responsive charts of the data files in your vault — CSV, JSON and
 
 Data files are read from the vault and never leave it.
 
+![Stacked weekly bars of minutes per heart-rate zone, with range buttons, a legend and the unit above the y axis, in Obsidian](docs/zones.png)
+
+*The screenshots show Obsidian's default theme and synthetic data.*
+
 ## A first chart
 
 ````markdown
 ```data-chart
 title: Steps per day
+description: Daily steps with a 7-day moving average and a goal line.
 source: Data/daily.csv
 x: date
 range: 3M
@@ -37,6 +42,8 @@ date,steps
 2026-03-01,8123
 2026-03-02,10456
 ```
+
+![Steps per day as bars with a 7-day average line and a goal at 10K; the first label of each month names it, and thin lines mark where months begin](docs/steps.png)
 
 ## The block
 
@@ -69,7 +76,7 @@ Series keys — also accepted at the top level, for every series:
 | `type` | `line`, `area`, `bar`, `scatter` | |
 | `rolling` | Moving average: a number of points, or a time window | `7`, `7d`, `4w` |
 | `agg` | Aggregation: `bucket/function` on a time axis (buckets `day`, `week`, `month`, `year`), or a function alone to merge equal x. Functions `sum`, `avg`, `min`, `max`, `last`, `count` | `week/sum` |
-| `band` | Two fields or expressions: a shaded range | `[low, high]` |
+| `band` | Two fields, expressions or numbers: the range where values are expected, in green; values outside are red triangles, up when above and down when below | `[low, high]`, `[7, 9]` |
 | `goal` | A horizontal line | `10000` |
 | `points` | Show every point (default: when there are at most 40) | `true` |
 | `smooth` | Smooth the line | `true` |
@@ -93,6 +100,8 @@ unit: bpm
 ranges: [10, {First 10 minutes: [0, 10]}, All]
 ```
 
+![Heart rate against the minutes of a run, with the range buttons 10, First 10 minutes and All](docs/any-axis.png)
+
 ## Expressions
 
 `where`, `y` and `band` take expressions: fields, numbers, `"strings"`, `+ - * / %`, `== != < <= > >=`, `and or not` (or `&& || !`), `in [..]`, parentheses. Dates in ISO format compare as text. `this.<property>` is a property of the note holding the chart; a link `[[Note]]` compares as `Note`. Names with spaces go in backticks: `` `End Date` ``.
@@ -107,20 +116,25 @@ series:
   - {y: distance_km * 1000 / (hr_avg * duration_min), name: 5-run average, rolling: 5}
 ```
 
+![Metres per heartbeat of each run over a year, as points, with a 5-run moving average](docs/efficiency.png)
+
 ## Lab results with reference bands
 
 ```data-chart
 title: Blood tests
+description: One chart per test, with its reference interval in green; values outside it are red triangles.
 source: Data/labs.jsonl
 x: date
 y: value
 band: [low, high]
 facet: analyte
-facets: [hemoglobin, ferritin, iron]
-labels: {hemoglobin: Hemoglobin (g/dL), ferritin: Ferritin (ng/mL), iron: Iron (µg/dL)}
+facets: [hemoglobin, ferritin, vitamin_d]
+labels: {hemoglobin: Hemoglobin (g/dL), ferritin: Ferritin (ng/mL), vitamin_d: Vitamin D (ng/mL)}
 points: true
 range: All
 ```
+
+![Three small charts, one per blood test, each with its reference interval as a green band; values outside it are red triangles pointing up or down](docs/blood-tests.png)
 
 And in the note of one report, its values:
 
@@ -150,19 +164,27 @@ range: 6M
 
 ```data-chart
 title: Minutes per heart-rate zone, per week
-description: Each column is one week of workouts; its height is the time above 50 % of heart-rate reserve.
+description: Each column is one week of running; its height is the total time.
 source: Data/workouts.jsonl
+where: sport == "running"
 x: date
+range: 6M
 type: bar
 agg: week/sum
 stack: true
-colors: [blue, aqua, yellow]
+colors: [blue, aqua, yellow, magenta, violet]
 unit: min
 series:
   - {y: z1_min, name: Z1}
   - {y: z2_min, name: Z2}
   - {y: z3_min, name: Z3}
+  - {y: z4_min, name: Z4}
+  - {y: z5_min, name: Z5}
 ```
+
+The same chart in a dark theme: colors take their dark steps.
+
+![The stacked zones chart in Obsidian's dark theme](docs/zones-dark.png)
 
 ## A pace, in minutes and seconds
 

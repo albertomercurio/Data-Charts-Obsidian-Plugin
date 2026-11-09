@@ -3,7 +3,7 @@
 // which knows nothing of Obsidian; src/obsidian/ draws with ECharts.
 
 import { BarChart, LineChart, ScatterChart } from "echarts/charts";
-import { DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
+import { DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { type Component, MarkdownRenderer, normalizePath, Plugin, type TAbstractFile, TFile } from "obsidian";
@@ -12,7 +12,7 @@ import type { ChartSpec } from "./src/spec";
 import { ChartBlock, type Host } from "./src/obsidian/block";
 import { registerLocales } from "./src/obsidian/locales";
 
-use([LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, CanvasRenderer]);
+use([LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, MarkAreaComponent, CanvasRenderer]);
 registerLocales();
 
 export default class DataChartsPlugin extends Plugin implements Host {

@@ -1,7 +1,7 @@
 // The chart theme from Obsidian's CSS variables, resolved to plain colors: the
 // canvas cannot read var() or calc(), so each value goes through a probe element.
 
-import { CRITICAL, LIGHT, PALETTE, RAMP, type Theme } from "../option";
+import { CRITICAL, GOOD, LIGHT, PALETTE, RAMP, type Theme } from "../option";
 
 function resolve(probe: HTMLElement, variable: string, fallback: string): string {
   probe.style.color = `var(${variable})`;
@@ -28,6 +28,7 @@ export function readTheme(): Theme {
       font: font || LIGHT.font,
       palette: dark ? PALETTE.dark : PALETTE.light,
       ramp: dark ? RAMP.dark : RAMP.light,
+      good: GOOD,
       critical: CRITICAL,
     };
   } finally {

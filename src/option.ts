@@ -23,6 +23,8 @@ export interface Theme {
   palette: string[];
   /** One hue from the surface outwards, for ordered series. */
   ramp: string[];
+  /** Reference bands: the range where values are expected. */
+  good: string;
   /** Points outside their reference band. */
   critical: string;
 }
@@ -39,7 +41,15 @@ export const RAMP = {
 };
 /** Names of the palette's colors, in its order: `color: violet` takes the theme's step of that hue. */
 export const COLOR_NAMES = ["blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red"];
+/** Status colors, the same on light and dark themes: in range, out of range. */
+export const GOOD = "#0ca30c";
 export const CRITICAL = "#d03b3b";
+
+/** A hex color with an opacity, as rgba(). */
+export function alpha(hex: string, opacity: number): string {
+  const m = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  return m ? `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${opacity})` : hex;
+}
 
 /** A color of a block: a name of the palette (light or dark step, as the theme), or any CSS color. */
 export function resolveColor(color: string, theme: Theme): string {
@@ -59,6 +69,7 @@ export const LIGHT: Theme = {
   font: "system-ui, -apple-system, 'Segoe UI', sans-serif",
   palette: PALETTE.light,
   ramp: RAMP.light,
+  good: GOOD,
   critical: CRITICAL,
 };
 
@@ -87,6 +98,15 @@ export function compact(value: number): string {
   return String(trim(value));
 }
 const trim = (value: number) => Math.round(value * 100) / 100;
+
+/** A round step for about five intervals over a span: 1, 2, 2.5 or 5 times a power of ten. */
+export function niceStep(span: number): number {
+  if (!(span > 0)) return 1;
+  const raw = span / 5;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].find((m) => m * power >= raw) ?? 10;
+  return step * power;
+}
 
 /** Seconds as 5:30 or 1:05:30. */
 export function duration(seconds: number): string {
@@ -152,8 +172,10 @@ export function timeAxisOption(spec: ChartSpec, theme: Theme, view: View, span: 
 
 function data(points: Point[], series: Series, theme: Theme, tops: Set<number> | null): unknown[] {
   return points.map((p) => {
-    const out = series.band && ((p.low !== undefined && p.y < p.low) || (p.high !== undefined && p.y > p.high));
-    if (out) return { value: [p.x, p.y], itemStyle: { color: theme.critical } };
+    // Out of the band: red, and a triangle pointing the way it is out, so that color is not alone.
+    const above = series.band && p.high !== undefined && p.y > p.high;
+    const below = series.band && p.low !== undefined && p.y < p.low;
+    if (above || below) return { value: [p.x, p.y], symbol: "triangle", symbolSize: 11, symbolRotate: above ? 0 : 180, itemStyle: { color: theme.critical } };
     // Stacked bars: only the top of each column is rounded.
     if (tops?.has(p.x)) return { value: [p.x, p.y], itemStyle: { borderRadius: [4, 4, 0, 0] } };
     return [p.x, p.y];
@@ -200,10 +222,17 @@ function markSeries(prepared: { series: Series; points: Point[] }, i: number, co
   const out: Option[] = [mark];
   if (series.band) {
     const banded = points.filter((p) => p.low !== undefined && p.high !== undefined);
-    const hidden = { type: "line", stack: `band:${i}`, symbol: "none", silent: true, z: 1, lineStyle: { opacity: 0 }, tooltip: { show: false }, emphasis: { disabled: true } };
+    // A green band with its edges; one point has no area to fill, so its band spans the chart.
+    const fill = alpha(theme.good, theme.dark ? 0.16 : 0.12);
+    const edge = { color: alpha(theme.good, 0.55), width: 1, type: "solid" };
+    if (banded.length === 1) {
+      mark.markArea = { silent: true, itemStyle: { color: fill, borderColor: edge.color, borderWidth: 1 }, data: [[{ yAxis: banded[0].low }, { yAxis: banded[0].high }]] };
+    }
+    const hidden = { type: "line", stack: `band:${i}`, symbol: "none", silent: true, z: 1, step: false, tooltip: { show: false }, emphasis: { disabled: true } };
+    const lines = banded.length > 1 ? edge : { opacity: 0 };
     out.unshift(
-      { ...hidden, id: bandId(i, "low"), name: bandId(i, "low"), data: banded.map((p) => [p.x, p.low]) },
-      { ...hidden, id: bandId(i, "high"), name: bandId(i, "high"), data: banded.map((p) => [p.x, (p.high as number) - (p.low as number)]), areaStyle: { color, opacity: 0.12 } }
+      { ...hidden, id: bandId(i, "low"), name: bandId(i, "low"), lineStyle: lines, data: banded.map((p) => [p.x, p.low]) },
+      { ...hidden, id: bandId(i, "high"), name: bandId(i, "high"), lineStyle: lines, data: banded.map((p) => [p.x, (p.high as number) - (p.low as number)]), areaStyle: { color: fill, opacity: 1 } }
     );
   }
   return out;
@@ -245,14 +274,30 @@ export function buildOption(facet: Facet, prepared: Prepared, spec: ChartSpec, t
     ...(prepared.kind === "category" ? { data: prepared.categories, boundaryGap: true } : { boundaryGap: bars ? ["2%", "2%"] : false }),
     ...(prepared.kind === "value" ? { scale: true } : {}),
   };
-  const span = prepared.kind === "time" && view ? extentOf(prepared) : null;
+  const single = singleX(prepared);
+  const drawn = axisSpan(prepared);
+  if (single && drawn) Object.assign(xAxis, { min: drawn[0], max: drawn[1] });
+  const span = prepared.kind === "time" && view ? drawn : null;
   if (span && view) {
-    const time = timeAxisOption(spec, theme, view, span);
+    const time = timeAxisOption(spec, theme, single ? { ...view, window: span } : view, span);
     Object.assign(xAxis, time, { axisLabel: { ...axisText, ...(time.axisLabel as Option) } });
+  }
+  // With a band, room above and below it, so that the band reads as a band and "outside" is
+  // visible; the axis ends and its ticks on round numbers.
+  const banded = facet.series.filter((s) => s.series.band).flatMap((s) => s.points);
+  let room: Option = {};
+  if (banded.length && spec.y.min === undefined && spec.y.max === undefined && !spec.y.log) {
+    const values = facet.series.flatMap((s) => s.points.flatMap((p) => [p.y, p.low, p.high])).filter((v): v is number => v !== undefined && Number.isFinite(v));
+    const [lo, hi] = [Math.min(...values), Math.max(...values)];
+    const pad = (hi - lo || Math.abs(hi) || 1) * 0.25;
+    const step = niceStep(hi - lo + 2 * pad);
+    const min = Math.floor((lo - pad) / step) * step;
+    room = { min: lo >= 0 ? Math.max(0, min) : min, max: Math.ceil((hi + pad) / step) * step, interval: step };
   }
   const yAxis: Option = {
     type: spec.y.log ? "log" : "value",
     scale: !zero,
+    ...room,
     inverse: spec.y.inverse ?? false,
     // Bars grow from zero: the axis includes it (scale: false), negative bars included.
     ...(spec.y.min !== undefined ? { min: spec.y.min } : {}),
@@ -271,7 +316,7 @@ export function buildOption(facet: Facet, prepared: Prepared, spec: ChartSpec, t
     animationDurationUpdate: 200,
     backgroundColor: "transparent",
     textStyle: { fontFamily: theme.font, color: theme.secondary },
-    grid: { left: 4, right: 16, top: legend && unit ? 46 : legend || unit ? 30 : 12, bottom: 40, containLabel: true },
+    grid: { left: 4, right: 16, top: legend && unit ? 46 : legend || unit ? 30 : 12, bottom: single ? 12 : 40, containLabel: true },
     ...(legend
       ? {
           legend: {
@@ -304,6 +349,8 @@ export function buildOption(facet: Facet, prepared: Prepared, spec: ChartSpec, t
       { type: "inside", filterMode, zoomOnMouseWheel: "ctrl", moveOnMouseWheel: false, moveOnMouseMove: true, preventDefaultMouseMove: false },
       {
         type: "slider",
+        // Nothing to slide along when every point has the same x.
+        show: !single,
         filterMode,
         height: 16,
         bottom: 6,
@@ -321,6 +368,23 @@ export function buildOption(facet: Facet, prepared: Prepared, spec: ChartSpec, t
     ],
     series: facet.series.flatMap((s, i) => markSeries(s, i, colors[i], theme, tops[i])),
   };
+}
+
+/**
+ * The extent of the x axis as drawn: weeks and months of totals included whole; a single x
+ * (one blood test, one day) gets room around it, a fortnight each side on a time axis.
+ */
+export function axisSpan(prepared: Prepared): [number, number] | null {
+  const whole = extentOf(prepared);
+  if (!whole || whole[0] !== whole[1] || prepared.kind === "category") return whole;
+  const pad = prepared.kind === "time" ? 15 * 86400000 : 1;
+  return [whole[0] - pad, whole[1] + pad];
+}
+
+/** Whether every point of the chart has the same x. */
+export function singleX(prepared: Prepared): boolean {
+  const whole = extentOf(prepared);
+  return whole !== null && whole[0] === whole[1] && prepared.kind !== "category";
 }
 
 /** The extent of a time axis, weeks and months of totals included whole. */

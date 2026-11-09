@@ -5,7 +5,7 @@
 import { connect, type EChartsType, init } from "echarts/core";
 import { type Component, MarkdownRenderChild, moment, parseYaml } from "obsidian";
 import { extent, filterRows, globMatcher, type Prepared, prepare, type Row, tableRows } from "../data";
-import { buildOption, extentOf, seriesColors, sharedBucket, type Theme, timeAxisOption, zoomTo } from "../option";
+import { axisSpan, buildOption, seriesColors, sharedBucket, singleX, type Theme, timeAxisOption, zoomTo } from "../option";
 import { timeUnit } from "../timeaxis";
 import { narrows, rangesFor, windowOf } from "../ranges";
 import { type ChartSpec, parseSpec, type Range } from "../spec";
@@ -122,8 +122,8 @@ export class ChartBlock extends MarkdownRenderChild {
   private refreshAxes(): void {
     const { spec, prepared, theme } = this;
     if (!spec || !prepared || !theme || prepared.kind !== "time") return;
-    const span = extentOf(prepared);
-    if (!span) return;
+    const span = axisSpan(prepared);
+    if (!span || singleX(prepared)) return;
     this.charts.forEach((chart, i) => {
       const window = this.shown(chart, span);
       const width = chart.getWidth() - AXIS_ROOM;
@@ -189,7 +189,7 @@ export class ChartBlock extends MarkdownRenderChild {
       return option;
     };
     const unitOf = (width: number) => {
-      const whole = extentOf(prepared);
+      const whole = axisSpan(prepared);
       const shown = window ?? whole;
       return prepared.kind === "time" && shown ? timeUnit(shown[1] - shown[0], width - AXIS_ROOM, sharedBucket(spec)) : null;
     };
@@ -258,7 +258,8 @@ export class ChartBlock extends MarkdownRenderChild {
     const chips = this.containerEl.querySelector<HTMLElement>(".data-chart-ranges");
     if (!chips) return;
     chips.empty();
-    for (const range of this.ranges) {
+    // A lone button (All) would choose nothing.
+    for (const range of this.ranges.length > 1 ? this.ranges : []) {
       const chip = chips.createEl("button", { cls: "data-chart-chip", text: range.label, attr: { "data-range": range.label, type: "button" } });
       chip.addEventListener("click", () => this.applyRange(range.label));
     }
