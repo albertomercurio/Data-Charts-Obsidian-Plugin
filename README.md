@@ -57,7 +57,7 @@ date,steps
 | `facets` | Which values, in which order | `[hemoglobin, ferritin]` |
 | `labels` | Names shown for facet values | `{ferritin: Ferritin (ng/mL)}` |
 | `yaxis` | `min`, `max`, `zero` (include zero), `log`, `unit` (shown above the axis; by default the unit all series share), `inverse` (upside down: for a pace, lower is faster), `format: duration` (values in seconds, shown as `5:30`) | `{zero: true}` |
-| `colors` | `sequential`: one hue from light to dark, for ordered series (zones, levels); or a list of CSS colors | `sequential` |
+| `colors` | A list, one color per series: names of the palette (`blue`, `orange`, `aqua`, `yellow`, `magenta`, `green`, `violet`, `red`), which take their dark step on dark themes, or CSS colors; or `sequential`: one hue from light to dark, for ordered series | `[blue, aqua, yellow]` |
 | `height` | Pixels, 120–2000 (default 300) | `240` |
 | `columns`, `sort`, `limit` | For `type: table`: fields shown, order (`-date` or `date desc`), number of rows | |
 
@@ -74,7 +74,7 @@ Series keys — also accepted at the top level, for every series:
 | `points` | Show every point (default: when there are at most 40) | `true` |
 | `smooth` | Smooth the line | `true` |
 | `unit` | After values in the tooltip | `kg` |
-| `color` | A CSS color, instead of the palette's next one | `"#2a78d6"` |
+| `color` | A palette name or a CSS color, instead of the palette's next one | `violet` |
 | `stack` | Bars (or areas) drawn on top of each other: `true`, or a name for each stack; the tooltip adds the total | `true` |
 
 There is never a second y axis: two measures of different scale go in two charts, which a `group` keeps on the same range.
@@ -156,7 +156,7 @@ x: date
 type: bar
 agg: week/sum
 stack: true
-colors: sequential
+colors: [blue, aqua, yellow]
 unit: min
 series:
   - {y: z1_min, name: Z1}

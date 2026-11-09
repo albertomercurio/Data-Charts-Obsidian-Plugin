@@ -37,7 +37,15 @@ export const RAMP = {
   light: ["#86b6ef", "#6da7ec", "#5598e7", "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281"],
   dark: ["#184f95", "#1c5cab", "#256abf", "#2a78d6", "#3987e5", "#5598e7", "#6da7ec", "#86b6ef", "#9ec5f4"],
 };
+/** Names of the palette's colors, in its order: `color: violet` takes the theme's step of that hue. */
+export const COLOR_NAMES = ["blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red"];
 export const CRITICAL = "#d03b3b";
+
+/** A color of a block: a name of the palette (light or dark step, as the theme), or any CSS color. */
+export function resolveColor(color: string, theme: Theme): string {
+  const i = COLOR_NAMES.indexOf(color.trim().toLowerCase());
+  return i >= 0 ? theme.palette[i] : color;
+}
 
 export const LIGHT: Theme = {
   dark: false,
@@ -100,9 +108,9 @@ export function seriesColors(spec: ChartSpec, theme: Theme): string[] {
   }
   if (Array.isArray(spec.colors)) {
     const list = spec.colors;
-    return spec.series.map((s, i) => s.color ?? list[i % list.length]);
+    return spec.series.map((s, i) => resolveColor(s.color ?? list[i % list.length], theme));
   }
-  return spec.series.map((s, i) => s.color ?? theme.palette[i % theme.palette.length]);
+  return spec.series.map((s, i) => (s.color ? resolveColor(s.color, theme) : theme.palette[i % theme.palette.length]));
 }
 
 /** The unit of the y axis: the block's, or the one every series shares. */

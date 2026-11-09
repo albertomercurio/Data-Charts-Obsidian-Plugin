@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parse } from "yaml";
 import { axisKind, bucketStart, extent, globMatcher, parseCsv, parseData, parseTime, prepare, tableRows } from "../src/data";
 import { compile, test as holds } from "../src/expr";
-import { bandId, buildOption, compact, duration, LIGHT, RAMP, seriesColors, timeAxisOption, yUnit } from "../src/option";
+import { bandId, buildOption, compact, duration, LIGHT, PALETTE, RAMP, resolveColor, seriesColors, timeAxisOption, yUnit } from "../src/option";
 import { timeAxis, timeLabel, timeUnit, unitNext, unitStart } from "../src/timeaxis";
 import { narrows, rangesFor, windowOf } from "../src/ranges";
 import { parseRange, parseSpec } from "../src/spec";
@@ -228,6 +228,10 @@ test("the chart option: stacked bars rounded on top, colors in one hue, the unit
   assert.deepEqual(option.series[2].data[0], [local(2026, 3, 2), 0]);
   assert.deepEqual(option.series[2].data[1].itemStyle.borderRadius, [4, 4, 0, 0]);
   assert.deepEqual(seriesColors(s, LIGHT), [RAMP.light[0], RAMP.light[4], RAMP.light[8]]);
+  // Colors by name take the theme's step of the hue; other colors pass through.
+  const named = spec("source: w.jsonl\nx: date\ncolors: [blue, Violet, '#123456']\nseries: [z1, z2, z3]");
+  assert.deepEqual(seriesColors(named, LIGHT), [PALETTE.light[0], PALETTE.light[6], "#123456"]);
+  assert.equal(resolveColor("violet", { ...LIGHT, palette: PALETTE.dark }), PALETTE.dark[6]);
   assert.equal(yUnit(s), "min");
   assert.equal(option.yAxis.name, "min");
   assert.equal(yUnit(spec("source: a\nx: d\nseries: [{y: a, unit: kg}, {y: b, unit: '%'}]")), undefined);
