@@ -13,8 +13,9 @@ Interactive, responsive charts of the data files in your vault — CSV, JSON and
 - **Tables**: a table view of every chart, and `type: table` for rows filtered by the note itself (`where: date == this.Date`).
 - **Live**: a chart redraws when its files change — an import running in the background updates the note you are reading.
 - **Theme**: colors, fonts and dark mode follow Obsidian; a color-blind-safe palette; works on iPhone and iPad.
+- **Weather**: a `data-weather` block shows the forecast for a place and a span of days — a trip, a race, an event — and updates itself.
 
-Data files are read from the vault and never leave it.
+Data files are read from the vault and never leave it. Only weather blocks use the network: see [Weather](#weather).
 
 ![Stacked weekly bars of minutes per heart-rate zone, with range buttons, a legend and the unit above the y axis, in Obsidian](docs/zones.png)
 
@@ -200,6 +201,38 @@ yaxis: {inverse: true, format: duration}
 points: true
 ```
 
+## Weather
+
+A `data-weather` block shows, for each day, the sky, the highest and lowest temperature, the chance and amount of rain, the strongest wind, and sunrise and sunset. The forecast comes from [Open-Meteo](https://open-meteo.com), free and without a key.
+
+```data-weather
+place: Edinburgh
+from: 2026-12-04
+to: 2026-12-07
+```
+
+In the note of a trip, the block can read the note's properties with `this.`: a link or a list of links gives the name of the first place.
+
+```data-weather
+title: Weather in Edinburgh
+place: this.Places
+from: this.Date
+to: this.End Date
+```
+
+| Key | Value |
+| --- | --- |
+| `place` | A city or another place, looked up by name; a link such as `[[Edinburgh]]` works too. |
+| `country` | An [ISO 3166-1 alpha-2](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2) code, when the name is ambiguous (`Paris` with `country: US`). |
+| `latitude`, `longitude` | Instead of a lookup; `place` is then only the name shown. |
+| `from`, `to` | The first and last day, `YYYY-MM-DD` (a time after the day is ignored). Without `from`, today; without `to`, seven days. |
+| `units` | `metric` (°C, mm, km/h, the default) or `imperial` (°F, inch, mph). |
+| `title` | Shown above the table; the place's name, region and country by default. |
+
+A forecast reaches 15 days after today. For days further ahead the block says from which day their forecast will appear, and it fills in as they come closer: it asks again every hour and whenever the note is opened. Days that have passed keep their weather for about three months.
+
+**Network use.** To show a weather block, the plugin sends the name of the place to Open-Meteo's geocoding service and the coordinates and days to its forecast service. Nothing else leaves the device. Answers are kept for an hour in memory and, so that the last forecast is still there offline, in the device's local storage; nothing is written to the vault. Weather data by [Open-Meteo.com](https://open-meteo.com/), under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the block says so under its table.
+
 ## Design
 
 Marks are thin and quiet: 2px lines, 8px points with a ring in the background color, bars at most 24px wide with rounded ends, fills at 10 %, a hairline grid, a legend only for two or more series. Series take a fixed order of eight colors chosen to stay distinct for color-vision deficiencies, with their own steps for dark themes; ordered series (`colors: sequential`) take steps of one blue instead, from the lightest to the darkest (the reverse on dark themes). Stacked bars are separated by a hairline of the background and rounded only at the top of each column. Text uses the theme's text colors, never a series color. Tooltips list every series at the x under the pointer, value first. Every chart has a table view.
@@ -213,4 +246,4 @@ npm run typecheck
 npm run build      # dist/main.js; with VAULT_PLUGIN_DIR=<vault>/.obsidian/plugins/data-charts, also installed there
 ```
 
-`src/` holds the logic and knows nothing of Obsidian or of the chart library: the expression language (`expr.ts`), the block (`spec.ts`), files and series (`data.ts`), ranges (`ranges.ts`), the labels of a time axis (`timeaxis.ts`) and the ECharts option (`option.ts`); `src/obsidian/` draws with [Apache ECharts](https://echarts.apache.org), importing only the parts it uses. The tests run with Node's test runner; the examples of this README are among them. MIT license.
+`src/` holds the logic and knows nothing of Obsidian or of the chart library: the expression language (`expr.ts`), the block (`spec.ts`), files and series (`data.ts`), ranges (`ranges.ts`), the labels of a time axis (`timeaxis.ts`), the ECharts option (`option.ts`) and the weather block (`weather.ts`); `src/obsidian/` draws with [Apache ECharts](https://echarts.apache.org), importing only the parts it uses. The tests run with Node's test runner; the examples of this README are among them. MIT license.

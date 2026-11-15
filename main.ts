@@ -1,22 +1,25 @@
 // Data Charts: interactive charts of the data files of a vault (CSV, JSON,
-// JSON Lines), drawn from `data-chart` blocks in notes. The logic is in src/,
-// which knows nothing of Obsidian; src/obsidian/ draws with ECharts.
+// JSON Lines), drawn from `data-chart` blocks in notes, and weather forecasts
+// from `data-weather` blocks. The logic is in src/, which knows nothing of
+// Obsidian; src/obsidian/ draws with ECharts and the DOM.
 
 import { BarChart, LineChart, ScatterChart } from "echarts/charts";
 import { DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent } from "echarts/components";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { type Component, MarkdownRenderer, normalizePath, Plugin, type TAbstractFile, TFile } from "obsidian";
+import { type Component, MarkdownRenderer, normalizePath, Plugin, requestUrl, type TAbstractFile, TFile } from "obsidian";
 import { globMatcher, parseData, type Row } from "./src/data";
 import type { ChartSpec } from "./src/spec";
 import { ChartBlock, type Host } from "./src/obsidian/block";
 import { registerLocales } from "./src/obsidian/locales";
+import { WeatherBlock, type WeatherHost } from "./src/obsidian/weather";
 
 use([LineChart, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, MarkLineComponent, MarkAreaComponent, CanvasRenderer]);
 registerLocales();
 
-export default class DataChartsPlugin extends Plugin implements Host {
+export default class DataChartsPlugin extends Plugin implements Host, WeatherHost {
   blocks = new Set<ChartBlock>();
+  weather = new Set<WeatherBlock>();
   /** Rows of each file read, until the file changes. */
   private cache = new Map<string, { mtime: number; rows: Row[] }>();
 
@@ -24,10 +27,14 @@ export default class DataChartsPlugin extends Plugin implements Host {
     this.registerMarkdownCodeBlockProcessor("data-chart", (source, el, ctx) => {
       ctx.addChild(new ChartBlock(this, source, el, ctx.sourcePath));
     });
+    this.registerMarkdownCodeBlockProcessor("data-weather", (source, el, ctx) => {
+      ctx.addChild(new WeatherBlock(this, source, el, ctx.sourcePath));
+    });
     const changed = (file: TAbstractFile, oldPath?: string) => {
       this.cache.delete(file.path);
       if (oldPath) this.cache.delete(oldPath);
       for (const block of this.blocks) if (block.uses(file.path) || (oldPath && block.uses(oldPath))) block.scheduleReload();
+      for (const block of this.weather) if (block.uses(file.path)) block.scheduleReload();
     };
     this.registerEvent(this.app.vault.on("modify", (file) => changed(file)));
     this.registerEvent(this.app.vault.on("create", (file) => changed(file)));
@@ -68,6 +75,16 @@ export default class DataChartsPlugin extends Plugin implements Host {
     if (!(file instanceof TFile)) return {};
     const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     return { ...frontmatter, "file.name": file.basename, "file.path": file.path, "file.folder": file.parent?.path ?? "" };
+  }
+
+  /** The only use of the network: `data-weather` blocks asking Open-Meteo. */
+  async getJson(url: string): Promise<unknown> {
+    const response = await requestUrl({ url, throw: false });
+    try {
+      return response.json;
+    } catch {
+      throw new Error(`${new URL(url).host} answered ${response.status}`);
+    }
   }
 
   async markdown(text: string, el: HTMLElement, sourcePath: string, component: Component): Promise<void> {
