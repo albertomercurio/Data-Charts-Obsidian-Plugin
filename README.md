@@ -21,6 +21,19 @@ Data files are read from the vault and never leave it. Only weather blocks use t
 
 *The screenshots show Obsidian's default theme and synthetic data.*
 
+## Installation
+
+Download `main.js`, `manifest.json`, `styles.css` from a published
+[GitHub release](https://github.com/albertomercurio/Data-Charts-Obsidian-Plugin/releases).
+Inside your vault's configuration folder (normally `.obsidian`), create
+`plugins/data-charts/` and put those files directly inside it. Reload Obsidian,
+then enable **Data Charts** under **Settings → Community plugins**.
+Each plugin can be installed on its own; no companion plugin or personal vault is required.
+
+The minimum Obsidian version is **1.5.0**. The plugin supports desktop and mobile.
+After the plugin is accepted into the community directory, it will also be
+available through Obsidian's built-in plugin browser.
+
 ## A first chart
 
 ````markdown
@@ -238,13 +251,31 @@ A forecast reaches 15 days after today. Days further ahead show, in grey, their 
 
 Marks are thin and quiet: 2px lines, 8px points with a ring in the background color, bars at most 24px wide with rounded ends, fills at 10 %, a hairline grid, a legend only for two or more series. Series take a fixed order of eight colors chosen to stay distinct for color-vision deficiencies, with their own steps for dark themes; ordered series (`colors: sequential`) take steps of one blue instead, from the lightest to the darkest (the reverse on dark themes). Stacked bars are separated by a hairline of the background and rounded only at the top of each column. Text uses the theme's text colors, never a series color. Tooltips list every series at the x under the pointer, value first. Every chart has a table view.
 
+## Privacy
+
+Charts read files and properties in the current vault; the plugin does not read
+files outside it or upload chart data. It has no telemetry and needs no paid
+account or API key. Only `data-weather` blocks use the network, as described in
+**Weather** below. No weather request is made unless a weather block is rendered.
+
 ## Development
 
 ```sh
 npm ci
+npm run lint
 npm test
 npm run typecheck
 npm run build      # dist/main.js; with VAULT_PLUGIN_DIR=<vault>/.obsidian/plugins/data-charts, also installed there
 ```
 
 `src/` holds the logic and knows nothing of Obsidian or of the chart library: the expression language (`expr.ts`), the block (`spec.ts`), files and series (`data.ts`), ranges (`ranges.ts`), the labels of a time axis (`timeaxis.ts`), the ECharts option (`option.ts`) and the weather block (`weather.ts`); `src/obsidian/` draws with [Apache ECharts](https://echarts.apache.org), importing only the parts it uses. The tests run with Node's test runner; the examples of this README are among them. MIT license.
+
+## Support and licence
+
+Report bugs and request features in this repository's **Issues**, including your
+Obsidian version, operating system, plugin version and a minimal example with
+synthetic data. Please leave private notes and personal data out of reports.
+
+MIT licence; see [LICENSE](LICENSE). Bundled dependencies retain their own licences;
+see [third-party attribution](THIRD_PARTY_NOTICES.md). Release preparation and
+the manual community-directory submission are described in [PUBLISHING.md](PUBLISHING.md).

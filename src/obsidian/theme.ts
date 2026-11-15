@@ -10,10 +10,10 @@ function resolve(probe: HTMLElement, variable: string, fallback: string): string
 }
 
 export function readTheme(): Theme {
-  const body = document.body;
+  const body = activeDocument.body;
   const dark = body.classList.contains("theme-dark");
   const probe = body.createDiv({ attr: { "aria-hidden": "true" } });
-  probe.style.display = "none";
+  probe.addClass("data-charts-theme-probe");
   try {
     const font = getComputedStyle(body).getPropertyValue("--font-interface").trim();
     return {

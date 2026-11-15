@@ -249,3 +249,7 @@
 .data-weather-footer a {
   color: inherit;
 }
+
+.data-charts-theme-probe {
+  display: none;
+}
