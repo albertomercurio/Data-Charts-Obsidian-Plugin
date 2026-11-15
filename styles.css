@@ -230,6 +230,16 @@
   margin-top: 8px;
 }
 
+.data-weather tr.is-typical td {
+  color: var(--text-muted);
+}
+
+.data-weather-note {
+  margin-top: 6px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
 .data-weather-footer {
   margin-top: 4px;
   font-size: var(--font-ui-smaller);

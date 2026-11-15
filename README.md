@@ -13,7 +13,7 @@ Interactive, responsive charts of the data files in your vault — CSV, JSON and
 - **Tables**: a table view of every chart, and `type: table` for rows filtered by the note itself (`where: date == this.Date`).
 - **Live**: a chart redraws when its files change — an import running in the background updates the note you are reading.
 - **Theme**: colors, fonts and dark mode follow Obsidian; a color-blind-safe palette; works on iPhone and iPad.
-- **Weather**: a `data-weather` block shows the forecast for a place and a span of days — a trip, a race, an event — and updates itself.
+- **Weather**: a `data-weather` block shows the forecast for a place and a span of days — a trip, a race, an event — and updates itself; days still too far ahead show their typical weather.
 
 Data files are read from the vault and never leave it. Only weather blocks use the network: see [Weather](#weather).
 
@@ -203,7 +203,7 @@ points: true
 
 ## Weather
 
-A `data-weather` block shows, for each day, the sky, the highest and lowest temperature, the chance and amount of rain, the strongest wind, and sunrise and sunset. The forecast comes from [Open-Meteo](https://open-meteo.com), free and without a key.
+A `data-weather` block shows, for each day, the sky, the highest and lowest temperature, the chance and amount of rain, the strongest wind, and sunrise and sunset; for days too far ahead, their typical weather. The forecast comes from [Open-Meteo](https://open-meteo.com), free and without a key.
 
 ```data-weather
 place: Edinburgh
@@ -225,13 +225,14 @@ to: this.End Date
 | `place` | A city or another place, looked up by name; a link such as `[[Edinburgh]]` works too. |
 | `country` | An [ISO 3166-1 alpha-2](https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2) code, when the name is ambiguous (`Paris` with `country: US`). |
 | `latitude`, `longitude` | Instead of a lookup; `place` is then only the name shown. |
-| `from`, `to` | The first and last day, `YYYY-MM-DD` (a time after the day is ignored). Without `from`, today; without `to`, seven days. |
+| `from`, `to` | The first and last day, `YYYY-MM-DD` (a time after the day is ignored). Without `from`, today. |
+| `days` | Instead of `to`: how many days from `from`; 7 by default. `days: 3` gives today and the next two days. |
 | `units` | `metric` (°C, mm, km/h, the default) or `imperial` (°F, inch, mph). |
 | `title` | Shown above the table; the place's name, region and country by default. |
 
-A forecast reaches 15 days after today. For days further ahead the block says from which day their forecast will appear, and it fills in as they come closer: it asks again every hour and whenever the note is opened. Days that have passed keep their weather for about three months.
+A forecast reaches 15 days after today. Days further ahead show, in grey, their typical weather: the average of the same days over the last ten years, from Open-Meteo's archive, where *Rain* is the share of those days with at least 1 mm (0.04 inch). A line under the table says from which day the forecast replaces them. The block asks again every hour and whenever the note is opened, so a trip fills in with forecasts as it comes closer. Days that have passed keep their weather for about three months.
 
-**Network use.** To show a weather block, the plugin sends the name of the place to Open-Meteo's geocoding service and the coordinates and days to its forecast service. Nothing else leaves the device. Answers are kept for an hour in memory and, so that the last forecast is still there offline, in the device's local storage; nothing is written to the vault. Weather data by [Open-Meteo.com](https://open-meteo.com/), under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the block says so under its table.
+**Network use.** To show a weather block, the plugin sends the name of the place to Open-Meteo's geocoding service, and the coordinates and days to its forecast and archive services. Nothing else leaves the device. Forecasts are kept for an hour (the archive for a month) in memory and, so that they are still there offline, in the device's local storage; nothing is written to the vault. Weather data by [Open-Meteo.com](https://open-meteo.com/), under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the block says so under its table.
 
 ## Design
 

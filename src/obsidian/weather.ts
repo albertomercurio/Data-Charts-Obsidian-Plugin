@@ -1,10 +1,11 @@
 // One `data-weather` block in a note: looks up the place, asks Open-Meteo for the
-// days it can give, and draws a table of them. Answers are kept for an hour in
+// days it can forecast and, for later days, the same days of past years, and
+// draws a table of them. Answers are kept for an hour in
 // memory and, for offline use, in the device's local storage; nothing is written
 // to the vault. Redraws every hour and when the note's properties change.
 
 import { MarkdownRenderChild, moment, parseYaml } from "obsidian";
-import { allowedRange, available, type Day, type Forecast, forecastUrl, geocodeUrl, isoDay, parseForecast, parseWeatherSpec, pending, type Place, placeFrom, sky, type WeatherSpec } from "../weather";
+import { allowedRange, archiveUrl, available, type Day, daysBetween, type Forecast, forecastUrl, geocodeUrl, isoDay, parseForecast, parseWeatherSpec, pastYears, pending, type Place, placeFrom, sky, typicalDays, type WeatherSpec } from "../weather";
 
 export interface WeatherHost {
   weather: Set<WeatherBlock>;
@@ -17,6 +18,15 @@ export interface WeatherHost {
 interface Answer {
   time: number;
   value: unknown;
+}
+
+/** The typical weather of the days beyond the forecast, and the years it comes from. */
+interface Typical {
+  days: Day[];
+  units: Forecast["units"];
+  years: string;
+  /** The day the forecast reaches the first of them. */
+  on: string;
 }
 
 const HOUR = 3600000;
@@ -106,6 +116,28 @@ export class WeatherBlock extends MarkdownRenderChild {
     return placeFrom(answer.value, spec.place!, spec.country);
   }
 
+  /** Days beyond the forecast: their typical weather, if the archive answers. */
+  private async typical(spec: WeatherSpec, place: Place, today: string): Promise<Typical | null> {
+    const later = pending(spec, today);
+    if (!later) return null;
+    const answers = await Promise.all(
+      pastYears(later, today).map((span) =>
+        ask(this.host, archiveUrl(place, span, spec.units), MONTH)
+          .then((a) => ({ year: span.from.slice(0, 4), weather: parseForecast(a.value) }))
+          .catch(() => null),
+      ),
+    );
+    const years = answers.filter((a): a is { year: string; weather: Forecast } => a !== null);
+    if (!years.length) return null;
+    const rainy = spec.units === "imperial" ? 0.04 : 1;
+    return {
+      days: typicalDays(daysBetween(later.from, later.to), years.map((y) => y.weather), rainy),
+      units: years[0].weather.units,
+      years: `${years[years.length - 1].year}–${years[0].year}`,
+      on: later.on,
+    };
+  }
+
   private async render(): Promise<void> {
     try {
       const today = isoDay(new Date());
@@ -126,7 +158,7 @@ export class WeatherBlock extends MarkdownRenderChild {
         }
         if (answer) forecast = parseForecast(answer.value);
       }
-      this.draw(spec, place, forecast, answer, today);
+      this.draw(spec, place, forecast, answer, await this.typical(spec, place, today), today);
     } catch (err) {
       this.containerEl.empty();
       const box = this.containerEl.createDiv({ cls: "data-chart-error" });
@@ -135,7 +167,7 @@ export class WeatherBlock extends MarkdownRenderChild {
     }
   }
 
-  private draw(spec: WeatherSpec, place: Place, forecast: Forecast | null, answer: (Answer & { stale: boolean }) | null, today: string): void {
+  private draw(spec: WeatherSpec, place: Place, forecast: Forecast | null, answer: (Answer & { stale: boolean }) | null, typical: Typical | null, today: string): void {
     const locale = moment.locale();
     const root = this.containerEl;
     root.empty();
@@ -143,11 +175,15 @@ export class WeatherBlock extends MarkdownRenderChild {
     const dayLabel = (date: string) => moment(date, "YYYY-MM-DD").locale(locale).format("ddd D MMM");
     const spanLabel = (from: string, to: string) => (from === to ? dayLabel(from) : `${dayLabel(from)} – ${dayLabel(to)}`);
 
-    const days = forecast?.days ?? [];
-    if (days.length && forecast) this.table(days, forecast, today, locale, dayLabel);
+    const days = [...(forecast?.days ?? []), ...(typical?.days ?? [])];
+    const units = forecast?.units ?? typical?.units;
+    if (days.length && units) this.table(days, units, today, locale, dayLabel);
 
     const later = pending(spec, today);
-    if (later) root.createDiv({ cls: "data-chart-empty", text: `Forecast for ${spanLabel(later.from, later.to)} from ${dayLabel(later.on)}.` });
+    if (typical) {
+      const which = forecast?.days.length ? "Days in grey: typical weather" : "Typical weather";
+      root.createDiv({ cls: "data-weather-note", text: `${which}, the average of ${typical.years}; rain is the share of rainy days. The forecast appears from ${dayLabel(typical.on)}.` });
+    } else if (later) root.createDiv({ cls: "data-chart-empty", text: `Forecast for ${spanLabel(later.from, later.to)} from ${dayLabel(later.on)}.` });
     else if (!days.length) root.createDiv({ cls: "data-chart-empty", text: `No weather kept for ${spanLabel(spec.from, spec.to)}.` });
 
     const footer = root.createDiv({ cls: "data-weather-footer" });
@@ -158,7 +194,7 @@ export class WeatherBlock extends MarkdownRenderChild {
     footer.createEl("a", { text: "Weather data by Open-Meteo.com", href: "https://open-meteo.com/" });
   }
 
-  private table(days: Day[], forecast: Forecast, today: string, locale: string, dayLabel: (date: string) => string): void {
+  private table(days: Day[], units: Forecast["units"], today: string, locale: string, dayLabel: (date: string) => string): void {
     const whole = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
     const tenth = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
     const percent = new Intl.NumberFormat(locale, { style: "percent" });
@@ -168,10 +204,10 @@ export class WeatherBlock extends MarkdownRenderChild {
 
     const table = this.containerEl.createDiv({ cls: "data-chart-table" }).createEl("table");
     const head = table.createEl("thead").createEl("tr");
-    for (const text of ["Day", "", forecast.units.temperature, "Rain", forecast.units.wind]) head.createEl("th", { text });
+    for (const text of ["Day", "", units.temperature, "Rain", units.wind]) head.createEl("th", { text });
     const body = table.createEl("tbody");
     for (const day of days) {
-      const tr = body.createEl("tr", { cls: day.date === today ? "is-today" : "" });
+      const tr = body.createEl("tr", { cls: [day.date === today ? "is-today" : "", day.typical ? "is-typical" : ""].join(" ").trim() });
       const when = tr.createEl("td");
       when.createDiv({ text: dayLabel(day.date) });
       if (day.sunrise && day.sunset) when.createDiv({ cls: "data-weather-sub", text: `${time(day.sunrise)}–${time(day.sunset)}` });
@@ -180,7 +216,7 @@ export class WeatherBlock extends MarkdownRenderChild {
       tr.createEl("td", { cls: "data-chart-number", text: `${value(day.max)} / ${value(day.min)}` });
       const rain = tr.createEl("td", { cls: "data-chart-number" });
       rain.createDiv({ text: day.chance === null ? "–" : percent.format(day.chance / 100) });
-      if (day.rain !== null && day.rain > 0) rain.createDiv({ cls: "data-weather-sub", text: `${tenth.format(day.rain)} ${forecast.units.rain}` });
+      if (day.rain !== null && day.rain > 0) rain.createDiv({ cls: "data-weather-sub", text: `${tenth.format(day.rain)} ${units.rain}` });
       tr.createEl("td", { cls: "data-chart-number", text: value(day.wind) });
     }
   }

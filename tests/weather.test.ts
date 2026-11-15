@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
-import { addDays, allowedRange, available, forecastUrl, geocodeUrl, parseForecast, parseWeatherSpec, pending, placeFrom, placeName, sky } from "../src/weather";
+import { addDays, addYears, allowedRange, archiveUrl, available, daysBetween, forecastUrl, geocodeUrl, parseForecast, parseWeatherSpec, pastYears, pending, placeFrom, placeName, sky, typicalDays } from "../src/weather";
 
 const TODAY = "2026-11-15";
 const spec = (yaml: string, self: Record<string, unknown> = {}) => parseWeatherSpec(yaml, parse, self, TODAY);
@@ -14,6 +14,8 @@ test("weather: the block, with the note's properties", () => {
   assert.equal(spec("place: this.Places\nfrom: this.`End Date`", trip).from, "2026-12-07");
   assert.deepEqual(spec("place: Paris\ncountry: us"), { place: "Paris", country: "US", from: TODAY, to: "2026-11-21", units: "metric" });
   assert.deepEqual(spec("latitude: 55.95\nlongitude: -3.19\nplace: Home\nunits: imperial"), { place: "Home", latitude: 55.95, longitude: -3.19, from: TODAY, to: "2026-11-21", units: "imperial" });
+  assert.deepEqual([spec("place: Lausanne\ndays: 3").from, spec("place: Lausanne\ndays: 3").to], [TODAY, "2026-11-17"]);
+  assert.equal(spec("place: Lausanne\nfrom: 2026-12-04\ndays: 1").to, "2026-12-04");
   assert.equal(placeName("[[Edinburgh#Old Town]]"), "Edinburgh");
   assert.equal(placeName([]), undefined);
 });
@@ -26,6 +28,8 @@ test("weather: errors that say what to write", () => {
   assert.throws(() => spec("place: Rome\nfrom: December"), { message: /^from: a day/ });
   assert.throws(() => spec("latitude: 41.9"), { message: /^latitude and longitude/ });
   assert.throws(() => spec("place: Rome\nunits: kelvin"), { message: /^units:/ });
+  assert.throws(() => spec("place: Rome\ndays: 0"), { message: /^days: a whole number/ });
+  assert.throws(() => spec("place: Rome\ndays: 2\nto: 2026-12-01"), { message: /^days or to/ });
 });
 
 test("weather: the days the forecast reaches, and when it reaches the others", () => {
@@ -73,6 +77,31 @@ test("weather: the addresses and the answers of Open-Meteo", () => {
   assert.deepEqual(forecast.days[0], { date: "2026-11-29", code: 53, max: 6.2, min: 1.1, chance: null, rain: 4, wind: 26.1, sunrise: "2026-11-29T08:15", sunset: "2026-11-29T15:45" });
   assert.equal(forecast.days[1].max, null);
   assert.equal(parseForecast({ daily_units: { wind_speed_10m_max: "mp/h" }, daily: { time: [] } }).units.wind, "mph");
+});
+
+test("weather: the typical weather of days beyond the forecast", () => {
+  assert.equal(addYears("2028-02-29", -1), "2027-02-28");
+  assert.equal(addYears("2026-12-04", -10), "2016-12-04");
+  assert.deepEqual(daysBetween("2026-12-30", "2027-01-01"), ["2026-12-30", "2026-12-31", "2027-01-01"]);
+
+  const years = pastYears({ from: "2026-12-04", to: "2026-12-07" }, TODAY);
+  assert.equal(years.length, 10);
+  assert.deepEqual([years[0], years[9]], [{ from: "2025-12-04", to: "2025-12-07" }, { from: "2016-12-04", to: "2016-12-07" }]);
+  // Days a year ago that the archive does not have yet are left out.
+  assert.deepEqual(pastYears({ from: "2027-11-13", to: "2027-11-14" }, TODAY)[0], { from: "2025-11-13", to: "2025-11-14" });
+
+  const url = new URL(archiveUrl({ latitude: 55.95, longitude: -3.19 }, years[0], "metric"));
+  assert.equal(url.host, "archive-api.open-meteo.com");
+  assert.equal(url.searchParams.get("daily")?.includes("precipitation_probability_max"), false);
+  assert.equal(new URL(forecastUrl({ latitude: 55.95, longitude: -3.19 }, years[0], "metric")).searchParams.get("daily")?.includes("precipitation_probability_max"), true);
+
+  const year = (y: number, max: number, rain: number) => parseForecast({
+    daily: { time: [`${y}-12-04`, `${y}-12-05`], temperature_2m_max: [max, max + 1], temperature_2m_min: [max - 5, null], precipitation_sum: [rain, 0], wind_speed_10m_max: [20, 30], sunrise: [`${y}-12-04T08:2${y % 10}`, null], sunset: [`${y}-12-04T15:4${y % 10}`, null] },
+  });
+  const typical = typicalDays(["2026-12-04", "2026-12-05"], [year(2025, 8, 4), year(2024, 6, 0.5)], 1);
+  assert.deepEqual(typical[0], { date: "2026-12-04", code: null, max: 7, min: 2, chance: 50, rain: 2.25, wind: 20, sunrise: "2025-12-04T08:25", sunset: "2025-12-04T15:45", typical: true });
+  assert.deepEqual([typical[1].max, typical[1].min, typical[1].chance], [8, null, 0]);
+  assert.equal(typicalDays(["2028-02-29"], [parseForecast({ daily: { time: ["2027-02-28"], temperature_2m_max: [3] } })], 1)[0].max, 3);
 });
 
 test("weather: a symbol for every WMO code", () => {
