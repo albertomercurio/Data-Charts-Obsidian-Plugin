@@ -1,9 +1,9 @@
 {
   "id": "data-charts",
   "name": "Data Charts",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "minAppVersion": "1.5.0",
-  "description": "Interactive, responsive charts of CSV, JSON and JSON Lines files in your vault: zoom, range buttons, reference bands, small multiples, tables. They redraw when the data changes.",
+  "description": "Interactive, responsive charts of CSV, JSON and JSON Lines files in your vault: zoom, range buttons, reference bands, small multiples, tables. They redraw when the data changes. Also weather forecasts for a place and a span of days.",
   "author": "Alberto Mercurio",
   "authorUrl": "https://github.com/albertomercurio",
   "isDesktopOnly": false

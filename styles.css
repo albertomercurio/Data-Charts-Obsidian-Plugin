@@ -200,3 +200,42 @@
   color: var(--text-error);
   font-weight: var(--font-semibold);
 }
+
+/* Weather: the whole table, a symbol per day, sunrise–sunset and rain under the main values. */
+.data-weather .data-chart-table {
+  max-height: none;
+}
+
+.data-weather th,
+.data-weather td {
+  padding: 3px 6px;
+  vertical-align: top;
+}
+
+.data-weather-sky {
+  font-size: 1.2em;
+  line-height: 1.2;
+}
+
+.data-weather-sub {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.data-weather tr.is-today td {
+  font-weight: var(--font-semibold);
+}
+
+.data-weather .data-chart-empty {
+  margin-top: 8px;
+}
+
+.data-weather-footer {
+  margin-top: 4px;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+}
+
+.data-weather-footer a {
+  color: inherit;
+}
