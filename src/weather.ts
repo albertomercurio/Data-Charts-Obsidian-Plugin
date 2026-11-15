@@ -1,6 +1,8 @@
 // The `data-weather` block: the forecast for a place and a span of days, from
-// Open-Meteo (https://open-meteo.com, free, no key). Here the block, the days the
-// service can give, its addresses and its answer, without Obsidian.
+// Open-Meteo (https://open-meteo.com, free, no key), and for days beyond the
+// forecast their typical weather, from the same days of past years. Here the
+// block, the days the service can give, its addresses and its answers, without
+// Obsidian.
 
 export interface WeatherSpec {
   title?: string;
@@ -34,6 +36,8 @@ export interface Day {
   wind: number | null;
   sunrise: string | null;
   sunset: string | null;
+  /** An average of past years, not a forecast; `chance` is then the share of rainy days. */
+  typical?: boolean;
 }
 
 export interface Forecast {
@@ -44,8 +48,12 @@ export interface Forecast {
 /** Open-Meteo forecasts reach 15 days after today, and keep 92 days before it. */
 export const AHEAD = 15;
 export const BACK = 92;
+/** Past years averaged for the typical weather of a day. */
+export const YEARS = 10;
+/** The archive of past weather lags by a few days. */
+const ARCHIVE_LAG = 6;
 
-const KEYS = ["title", "place", "country", "latitude", "longitude", "from", "to", "units"];
+const KEYS = ["title", "place", "country", "latitude", "longitude", "from", "to", "days", "units"];
 const DAY_MS = 86400000;
 
 /** A local date as YYYY-MM-DD. */
@@ -57,6 +65,20 @@ export function isoDay(date: Date): string {
 export function addDays(day: string, n: number): string {
   const [y, m, d] = day.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d) + n * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The same day n years later (or earlier); 29 February becomes the 28th. */
+export function addYears(day: string, n: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const last = new Date(Date.UTC(y + n, m, 0)).getUTCDate();
+  return `${y + n}-${String(m).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`;
+}
+
+/** Every day from one day to another. */
+export function daysBetween(from: string, to: string): string[] {
+  const days: string[] = [];
+  for (let day = from; day <= to; day = addDays(day, 1)) days.push(day);
+  return days;
 }
 
 /** `this.Date` or `` this.`End Date` ``: a property of the note; anything else as written. */
@@ -89,7 +111,7 @@ function number(value: unknown, key: string): number | undefined {
   return n;
 }
 
-/** Reads a block. Without `from` the forecast starts today; without `to` it lasts 7 days. */
+/** Reads a block. Without `from` the forecast starts today; without `to` it lasts `days` days, 7 by default. */
 export function parseWeatherSpec(source: string, parse: (text: string) => unknown, self: Record<string, unknown> = {}, today = isoDay(new Date())): WeatherSpec {
   const raw = parse(source) ?? {};
   if (typeof raw !== "object" || Array.isArray(raw)) throw new Error(`the block is YAML with the keys ${KEYS.join(", ")}`);
@@ -104,7 +126,10 @@ export function parseWeatherSpec(source: string, parse: (text: string) => unknow
   if (latitude === undefined && !place) throw new Error(block.place === undefined ? "place: a city, or latitude and longitude" : `place: ${String(block.place)} is empty`);
 
   const from = day(value("from"), "from") ?? today;
-  const to = day(value("to"), "to") ?? addDays(from, 6);
+  const days = number(value("days"), "days");
+  if (days !== undefined && (!Number.isInteger(days) || days < 1)) throw new Error(`days: a whole number of days, at least 1, not ${days}`);
+  if (days !== undefined && block.to !== undefined) throw new Error("days or to, not both");
+  const to = day(value("to"), "to") ?? addDays(from, (days ?? 7) - 1);
   if (to < from) throw new Error(`to: ${to} comes before from: ${from}`);
 
   const units = value("units") ?? "metric";
@@ -150,11 +175,13 @@ export function placeFrom(answer: unknown, name: string, country?: string): Plac
   return { label: [...new Set(parts)].join(", "), latitude: Number(result.latitude), longitude: Number(result.longitude) };
 }
 
-export function forecastUrl(place: { latitude: number; longitude: number }, span: { from: string; to: string }, units: WeatherSpec["units"]): string {
+const DAILY = "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,sunrise,sunset";
+
+function dailyUrl(base: string, daily: string, place: { latitude: number; longitude: number }, span: { from: string; to: string }, units: WeatherSpec["units"]): string {
   const query = new URLSearchParams({
     latitude: place.latitude.toFixed(4),
     longitude: place.longitude.toFixed(4),
-    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,wind_speed_10m_max,sunrise,sunset",
+    daily,
     timezone: "auto",
     start_date: span.from,
     end_date: span.to,
@@ -164,7 +191,56 @@ export function forecastUrl(place: { latitude: number; longitude: number }, span
     query.set("wind_speed_unit", "mph");
     query.set("precipitation_unit", "inch");
   }
-  return `https://api.open-meteo.com/v1/forecast?${query}`;
+  return `${base}?${query}`;
+}
+
+export function forecastUrl(place: { latitude: number; longitude: number }, span: { from: string; to: string }, units: WeatherSpec["units"]): string {
+  return dailyUrl("https://api.open-meteo.com/v1/forecast", `${DAILY},precipitation_probability_max`, place, span, units);
+}
+
+/** The weather that was, from the archive (no chance of rain there). */
+export function archiveUrl(place: { latitude: number; longitude: number }, span: { from: string; to: string }, units: WeatherSpec["units"]): string {
+  return dailyUrl("https://archive-api.open-meteo.com/v1/archive", DAILY, place, span, units);
+}
+
+/** The same days in each of the last YEARS years already in the archive, the latest first. */
+export function pastYears(span: { from: string; to: string }, today: string): { from: string; to: string }[] {
+  const spans: { from: string; to: string }[] = [];
+  const archived = addDays(today, -ARCHIVE_LAG);
+  for (let n = 1; spans.length < YEARS && n <= YEARS + 1; n++) {
+    const year = { from: addYears(span.from, -n), to: addYears(span.to, -n) };
+    if (year.to <= archived) spans.push(year);
+  }
+  return spans;
+}
+
+/**
+ * The typical weather of each day, from the same day of past years (latest first):
+ * mean highest, lowest, rain and wind; `chance` is the share of years with a rainy
+ * day (at least `rainy` of rain); sunrise and sunset of the latest year.
+ */
+export function typicalDays(days: string[], years: Forecast[], rainy: number): Day[] {
+  const mean = (values: (number | null)[]) => {
+    const known = values.filter((v): v is number => v !== null);
+    return known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
+  };
+  return days.map((date) => {
+    const monthDay = date.endsWith("-02-29") ? "02-28" : date.slice(5);
+    const same = years.flatMap((year) => year.days.filter((d) => d.date.slice(5) === monthDay));
+    const rains = same.map((d) => d.rain).filter((v): v is number => v !== null);
+    return {
+      date,
+      code: null,
+      max: mean(same.map((d) => d.max)),
+      min: mean(same.map((d) => d.min)),
+      chance: rains.length ? (100 * rains.filter((r) => r >= rainy).length) / rains.length : null,
+      rain: mean(same.map((d) => d.rain)),
+      wind: mean(same.map((d) => d.wind)),
+      sunrise: same[0]?.sunrise ?? null,
+      sunset: same[0]?.sunset ?? null,
+      typical: true,
+    };
+  });
 }
 
 /** The days the service accepts, when it refuses others (its "today" may differ from the device's). */
